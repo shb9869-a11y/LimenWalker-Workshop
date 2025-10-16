@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#000000">
-<link rel="manifest" href="manifest.json"><!-- (선택) 있으면 standalone 적용 -->
+<link rel="manifest" href="manifest.json">
 
 <style>
   :root{
@@ -30,6 +30,10 @@
     position:fixed; left:0; top:0; width:var(--vwpx); height:var(--vhpx);
     object-fit:cover; background:#000; z-index:0;
     filter:grayscale(1) contrast(1.2);
+    /* iOS 합성 블랭킹 회피 */
+    will-change: transform;
+    transform: translateZ(0);
+    backface-visibility: hidden;
   }
 
   /* 궤적 캔버스 (카메라 위, 오버레이/프로시니엄 아래) */
@@ -63,7 +67,8 @@
   #overlay{
     position:fixed; left:0; top:0; width:var(--vwpx); height:var(--vhpx);
     display:flex; align-items:center; justify-content:center; flex-direction:column;
-    background:rgba(0,0,0,.80); z-index:10; text-align:center; line-height:1.6;
+    background:rgba(0,0,0,.65); /* 살짝 낮춰 시야 확보 */
+    z-index:10; text-align:center; line-height:1.6;
     transition:opacity .35s ease;
   }
   #overlay.hidden{ opacity:0; pointer-events:none; }
@@ -75,7 +80,7 @@
     font-size:clamp(14px,2vmin,20px); cursor:pointer;
   }
 
-  /* 상단 안내(검정박스 아님 → 전체 화면 중앙 안내) */
+  /* 처음 안내(검정박스 아님 → 전체 화면 중앙) */
   #infoText{
     position:fixed; left:0; top:0; width:var(--vwpx); height:var(--vhpx);
     display:flex; align-items:center; justify-content:center; text-align:center;
@@ -140,7 +145,7 @@ function setViewportVars(){
   document.documentElement.style.setProperty('--vwpx', w + 'px');
   document.documentElement.style.setProperty('--vhpx', h + 'px');
 
-  // 캔버스도 DPR 맞춰 리사이즈
+  // 캔버스 DPR 리사이징
   const dpr = Math.max(1, window.devicePixelRatio || 1);
   trail.width  = Math.floor(w * dpr);
   trail.height = Math.floor(h * dpr);
@@ -154,6 +159,7 @@ if (window.visualViewport){
   visualViewport.addEventListener('resize', setViewportVars);
   visualViewport.addEventListener('scroll', setViewportVars);
 }
+window.addEventListener('orientationchange', ()=>{ setTimeout(setViewportVars, 120); });
 
 /* ===== Audio ===== */
 let audioCtx;
@@ -204,6 +210,8 @@ setInterval(()=>{ if(ninja.style.opacity !== '0'){ ninja.src = ninjaUrl(); } }, 
 function showNinja(on=true){
   if(on){
     if(!ninja.contentWindow) ninja.src = ninjaUrl();
+    // 트랜지션 보장
+    ninja.style.opacity = '0'; void ninja.offsetHeight;
     ninja.style.opacity = String(CONFIG.BLEND);
   }else{
     ninja.style.opacity = '0';
@@ -221,7 +229,9 @@ const MAX_POINTS = 2500;
 const DECAY_START = 10_000; // 10초 후부터 해체 시작
 const MAX_AGE     = 60_000; // 60초 후 완전 소멸
 const MAX_JITTER  = 18;     // px (나이 기반 지터 상한)
-const BASE_DASH   = [6, 8]; // 점선 패턴
+
+/* 점선 더 얇게/촘촘하게 */
+const BASE_DASH   = [2, 6]; // ← 기존 [6,8]에서 축소
 
 // 가속도(중력 포함) 크기 → 지터 보정 참고용
 let motionMag = 0;
@@ -289,25 +299,24 @@ function jitterFor(age){
 
 function drawTrajectory(){
   const now = performance.now();
-  // fade 배경 살짝 깔아 트레일 잔상 느낌(아주 옅은 검정)
+  // 잔상 느낌
   tctx.fillStyle = 'rgba(0,0,0,0.06)';
   tctx.fillRect(0,0,trail.clientWidth, trail.clientHeight);
 
   if(points.length < 2 || !drawingEnabled) return;
 
-  // 그리기
   tctx.save();
-  tctx.lineWidth = 2;
-  tctx.setLineDash(BASE_DASH);
+  tctx.lineWidth = 1;             // ← 더 얇게
+  tctx.setLineDash(BASE_DASH);    // ← 더 촘촘
   for(let i=1;i<points.length;i++){
     const a = points[i-1], b = points[i];
     const age = now - b.t;
 
-    if(age > MAX_AGE) continue; // 너무 오래된 건 스킵(배열은 주기적으로 청소)
+    if(age > MAX_AGE) continue;
 
     const alpha =
-      age <= DECAY_START ? 0.95
-      : Math.max(0, 0.95 * (1 - (age-DECAY_START)/(MAX_AGE-DECAY_START)));
+      age <= DECAY_START ? 0.9
+      : Math.max(0, 0.9 * (1 - (age-DECAY_START)/(MAX_AGE-DECAY_START)));
 
     // 지터
     const j = age > DECAY_START ? jitterFor(age) : 0;
@@ -327,7 +336,6 @@ function drawTrajectory(){
   // 오래된 포인트 정리
   const cutoff = now - MAX_AGE;
   if(points.length && points[0].t < cutoff){
-    // 첫 오래된 몇 개 제거
     let idx = 0;
     while(idx < points.length && points[idx].t < cutoff) idx++;
     if(idx>0) points.splice(0, idx);
@@ -340,7 +348,9 @@ function loop(){
   rafId = requestAnimationFrame(loop);
 }
 
-/* ===== Permissions (후면 카메라) ===== */
+/* ===== 카메라/권한 ===== */
+let currentStream = null;
+
 async function requestPermissions(){
   // 카메라/마이크
   try{
@@ -348,13 +358,32 @@ async function requestPermissions(){
       video: { facingMode: { ideal: "environment" } }, // 후면 우선
       audio: true
     });
+    currentStream = stream;                 // 참조 유지
     camView.srcObject = stream;
+    camView.muted = true;
+    camView.setAttribute('playsinline','');
+    try { await camView.play(); } catch {}
+    // (디버깅) 트랙 상태 로깅
+    currentStream.getVideoTracks().forEach(tr=>{
+      tr.onended  = ()=>console.warn('Video track ended');
+      tr.onmute   = ()=>console.warn('Video track muted');
+      tr.onunmute = ()=>console.warn('Video track unmuted');
+    });
   }catch(e){
-    // 폴백
+    console.warn("Camera error, fallback to any:",e);
     try{
       const stream = await navigator.mediaDevices.getUserMedia({ video:true, audio:true });
+      currentStream = stream;
       camView.srcObject = stream;
-    }catch(err){ console.error('Camera failed:', err); }
+      camView.muted = true;
+      camView.setAttribute('playsinline','');
+      try { await camView.play(); } catch {}
+    }catch(err){
+      console.error('Camera failed:', err);
+      infoText.style.display='flex';
+      infoText.innerHTML = '카메라 접근이 거부되었어요.<br>설정에서 카메라/마이크 권한을 허용해 주세요.';
+      return;
+    }
   }
   // 위치
   try{ if(navigator.geolocation) navigator.geolocation.getCurrentPosition(()=>{},()=>{}); }catch{}
@@ -391,8 +420,9 @@ onPress(window, async ()=>{
   startGPS();
   if(!rafId) loop();
 
-  // 첫 제스처 직후 레졸룸 시작 (iOS A2HS에서 자동재생 보장)
-  applyRezScale(); showNinja(true);
+  // 레졸룸: 합성 충돌 방지 위해 살짝 지연 표시
+  applyRezScale();
+  setTimeout(()=> showNinja(true), 200);
 
   stepWelcome();
 });
@@ -409,7 +439,9 @@ function stepWelcome(){
 }
 
 /* 3) PRESS → 안내문 + 타이머(여기서만 표시) */
+let guideTimer = null;
 onPress(startBtn, ()=>{
+  if(guideTimer) return;   // 재진입 방지
   beep(660,150);
   startBtn.style.display='none';
   showOverlayText(formatGuide(), false);
@@ -417,11 +449,11 @@ onPress(startBtn, ()=>{
   let sec = 60;
   countdown.style.display='block';
   countdown.textContent = `${sec}초 후 탐사가 시작됩니다.`;
-  const timer = setInterval(()=>{
+  guideTimer = setInterval(()=>{
     sec--;
     countdown.textContent = `${sec}초 후 탐사가 시작됩니다.`;
     if(sec<=0){
-      clearInterval(timer);
+      clearInterval(guideTimer); guideTimer = null;
       countdown.style.display='none';
       stepWalkStop();
     }
@@ -450,13 +482,21 @@ function formatGuide(){
   return lines.map((l,i)=>`${i+1}. ${l}`).join("\n\n");
 }
 
-/* iOS A2HS 복귀 시 레이아웃/오디오 재개 */
+/* 복귀/회전 시 비디오 재생 보장 & 레이아웃 리프레시 */
 document.addEventListener('visibilitychange', ()=>{
   if(document.visibilityState==='visible'){
     setViewportVars();
-    if(audioCtx && audioCtx.state==='suspended'){ audioCtx.resume().catch(()=>{}); }
     applyRezScale();
+    showNinja(true);
+    camView.play().catch(()=>{});   // 🔁 재생 재요청
+    if(audioCtx && audioCtx.state==='suspended'){ audioCtx.resume().catch(()=>{}); }
   }
+});
+window.addEventListener('orientationchange', ()=>{
+  setTimeout(()=>{
+    setViewportVars();
+    camView.play().catch(()=>{});   // 🔁 회전 뒤 재요청
+  },120);
 });
 
 })();
