@@ -32,6 +32,12 @@
     filter:grayscale(1) contrast(1.2);
   }
 
+  /* 궤적 캔버스 (카메라 위, 오버레이/프로시니엄 아래) */
+  #trailCanvas{
+    position:fixed; left:0; top:0; width:var(--vwpx); height:var(--vhpx);
+    z-index:2; pointer-events:none; background:transparent;
+  }
+
   /* VDO.Ninja 오버레이 (레졸룸) */
   #ninjaOverlay{
     position:fixed; left:50%; top:50%;
@@ -69,7 +75,7 @@
     font-size:clamp(14px,2vmin,20px); cursor:pointer;
   }
 
-  /* 상단 안내(검정박스 아님 → 중앙 전체 화면으로 안내) */
+  /* 상단 안내(검정박스 아님 → 전체 화면 중앙 안내) */
   #infoText{
     position:fixed; left:0; top:0; width:var(--vwpx); height:var(--vhpx);
     display:flex; align-items:center; justify-content:center; text-align:center;
@@ -85,6 +91,9 @@
 
 <!-- 실시간 카메라(후면) -->
 <video id="cameraView" autoplay muted playsinline></video>
+
+<!-- 궤적 캔버스 -->
+<canvas id="trailCanvas"></canvas>
 
 <!-- VDO.Ninja(레졸룸) -->
 <iframe id="ninjaOverlay"
@@ -113,12 +122,14 @@
 const CONFIG = { ROOM_ID: "YOURROOMID", BLEND: 0.5, REZ_SCALE: 0.65 };
 
 /* ===== Elements ===== */
-const camView = document.getElementById('cameraView');
-const ninja = document.getElementById('ninjaOverlay');
-const overlay = document.getElementById('overlay');
-const msg = document.getElementById('msg');
-const startBtn = document.getElementById('startBtn');
-const infoText = document.getElementById('infoText');
+const camView   = document.getElementById('cameraView');
+const trail     = document.getElementById('trailCanvas');
+const tctx      = trail.getContext('2d');
+const ninja     = document.getElementById('ninjaOverlay');
+const overlay   = document.getElementById('overlay');
+const msg       = document.getElementById('msg');
+const startBtn  = document.getElementById('startBtn');
+const infoText  = document.getElementById('infoText');
 const countdown = document.getElementById('countdown');
 
 /* ===== Viewport fix for A2HS ===== */
@@ -128,6 +139,14 @@ function setViewportVars(){
   const h = Math.round((vv?.height || window.innerHeight));
   document.documentElement.style.setProperty('--vwpx', w + 'px');
   document.documentElement.style.setProperty('--vhpx', h + 'px');
+
+  // 캔버스도 DPR 맞춰 리사이즈
+  const dpr = Math.max(1, window.devicePixelRatio || 1);
+  trail.width  = Math.floor(w * dpr);
+  trail.height = Math.floor(h * dpr);
+  trail.style.width  = w + 'px';
+  trail.style.height = h + 'px';
+  tctx.setTransform(dpr,0,0,dpr,0,0);
 }
 setViewportVars();
 window.addEventListener('resize', setViewportVars);
@@ -155,7 +174,7 @@ function beep(freq=880, dur=150){
   }catch{}
 }
 
-/* ===== Helpers ===== */
+/* ===== Overlay helpers ===== */
 function showOverlayText(text, center=true){
   msg.className = center ? 'centerText' : 'stageText';
   msg.textContent = text;
@@ -189,6 +208,136 @@ function showNinja(on=true){
   }else{
     ninja.style.opacity = '0';
   }
+}
+
+/* ===== Sensors & Trajectory ===== */
+let gpsWatchId = null;
+let firstFix = null;     // {lat, lon}
+let points = [];         // {x, y, t, speed}
+let drawingEnabled = false;
+let metersPerPixel = 1.2;   // 화면 스케일(수정 가능)
+const MAX_POINTS = 2500;
+
+const DECAY_START = 10_000; // 10초 후부터 해체 시작
+const MAX_AGE     = 60_000; // 60초 후 완전 소멸
+const MAX_JITTER  = 18;     // px (나이 기반 지터 상한)
+const BASE_DASH   = [6, 8]; // 점선 패턴
+
+// 가속도(중력 포함) 크기 → 지터 보정 참고용
+let motionMag = 0;
+function onMotion(e){
+  const ax = e.accelerationIncludingGravity?.x || 0;
+  const ay = e.accelerationIncludingGravity?.y || 0;
+  const az = e.accelerationIncludingGravity?.z || 0;
+  const mag = Math.hypot(ax, ay, az);
+  motionMag = motionMag * 0.9 + mag * 0.1;
+}
+function enableMotionIfNeeded(){
+  try{
+    if (typeof DeviceMotionEvent !== 'undefined' &&
+        typeof DeviceMotionEvent.requestPermission === 'function'){
+      DeviceMotionEvent.requestPermission().catch(()=>{});
+    }
+  }catch(e){}
+  window.addEventListener('devicemotion', onMotion, {passive:true});
+}
+
+// 위경도 → 시작 지점 기준 상대 미터
+const M_PER_DEG = 111320;
+function llToMeters(lat0, lon0, lat, lon){
+  const x = (lon - lon0) * Math.cos(lat0 * Math.PI/180) * M_PER_DEG;
+  const y = (lat - lat0) * M_PER_DEG;
+  return {x, y};
+}
+// 미터 → 화면 좌표
+function metersToCanvas(xm, ym){
+  const w = trail.clientWidth, h = trail.clientHeight;
+  const cx = w/2, cy = h/2; // 화면 중앙을 (0,0)처럼
+  return { x: cx + xm / metersPerPixel, y: cy - ym / metersPerPixel };
+}
+
+function startGPS(){
+  if(!('geolocation' in navigator)) return;
+  firstFix = null;
+  gpsWatchId = navigator.geolocation.watchPosition(
+    pos=>{
+      const {latitude:lat, longitude:lon, speed} = pos.coords;
+      if(!firstFix){ firstFix = {lat, lon}; }
+      const m  = llToMeters(firstFix.lat, firstFix.lon, lat, lon);
+      const p  = metersToCanvas(m.x, m.y);
+      points.push({
+        x: p.x, y: p.y,
+        t: performance.now(),
+        speed: (Number.isFinite(speed) ? speed : 0) || 0
+      });
+      if(points.length > MAX_POINTS) points.shift();
+    },
+    err=>{ /* silent; 실내에서 흔함 */ },
+    { enableHighAccuracy:true, maximumAge:1000, timeout:10000 }
+  );
+}
+function stopGPS(){
+  if(gpsWatchId!=null){ navigator.geolocation.clearWatch(gpsWatchId); gpsWatchId=null; }
+}
+
+// 랜덤 지터(나이/가속 기반)
+function jitterFor(age){
+  const frac = Math.min(1, Math.max(0, (age-DECAY_START)/(MAX_AGE-DECAY_START)));
+  const motionBoost = Math.min(1, Math.max(0, (motionMag-5)/10)); // 대략적 보정
+  return (MAX_JITTER * frac) * (0.5 + 0.5*motionBoost);
+}
+
+function drawTrajectory(){
+  const now = performance.now();
+  // fade 배경 살짝 깔아 트레일 잔상 느낌(아주 옅은 검정)
+  tctx.fillStyle = 'rgba(0,0,0,0.06)';
+  tctx.fillRect(0,0,trail.clientWidth, trail.clientHeight);
+
+  if(points.length < 2 || !drawingEnabled) return;
+
+  // 그리기
+  tctx.save();
+  tctx.lineWidth = 2;
+  tctx.setLineDash(BASE_DASH);
+  for(let i=1;i<points.length;i++){
+    const a = points[i-1], b = points[i];
+    const age = now - b.t;
+
+    if(age > MAX_AGE) continue; // 너무 오래된 건 스킵(배열은 주기적으로 청소)
+
+    const alpha =
+      age <= DECAY_START ? 0.95
+      : Math.max(0, 0.95 * (1 - (age-DECAY_START)/(MAX_AGE-DECAY_START)));
+
+    // 지터
+    const j = age > DECAY_START ? jitterFor(age) : 0;
+    const jx1 = (Math.random()-0.5)*2*j;
+    const jy1 = (Math.random()-0.5)*2*j;
+    const jx2 = (Math.random()-0.5)*2*j;
+    const jy2 = (Math.random()-0.5)*2*j;
+
+    tctx.strokeStyle = `rgba(255,255,255,${alpha})`;
+    tctx.beginPath();
+    tctx.moveTo(a.x + jx1, a.y + jy1);
+    tctx.lineTo(b.x + jx2, b.y + jy2);
+    tctx.stroke();
+  }
+  tctx.restore();
+
+  // 오래된 포인트 정리
+  const cutoff = now - MAX_AGE;
+  if(points.length && points[0].t < cutoff){
+    // 첫 오래된 몇 개 제거
+    let idx = 0;
+    while(idx < points.length && points[idx].t < cutoff) idx++;
+    if(idx>0) points.splice(0, idx);
+  }
+}
+
+let rafId = null;
+function loop(){
+  drawTrajectory();
+  rafId = requestAnimationFrame(loop);
 }
 
 /* ===== Permissions (후면 카메라) ===== */
@@ -231,11 +380,16 @@ function onPress(el, handler){
 }
 
 /* ===== Flow ===== */
-/* 1) 첫 터치: 오디오 init + 권한 요청 + Ninja on → WELCOME */
+/* 1) 첫 터치: 오디오 init + 권한 + 센서(수집 시작) + Ninja on → WELCOME */
 onPress(window, async ()=>{
   initAudioContext();
   infoText.style.display='none';
   await requestPermissions();
+
+  // 센서 수집 시작(시각화 표시는 아직 off)
+  enableMotionIfNeeded();
+  startGPS();
+  if(!rafId) loop();
 
   // 첫 제스처 직후 레졸룸 시작 (iOS A2HS에서 자동재생 보장)
   applyRezScale(); showNinja(true);
@@ -274,8 +428,9 @@ onPress(startBtn, ()=>{
   }, 1000);
 });
 
-/* 4) WALK → 3초 후 STOP → 3초 후 숨김 */
+/* 4) WALK → 3초 후 STOP → 3초 후 숨김 + 이때부터 시각화 표시 ON */
 function stepWalkStop(){
+  drawingEnabled = true;     // === 여기서부터 화면에 궤적 표시 시작 ===
   showOverlayText('WALK : 공간을 걸어보세요.', true);
   setTimeout(()=>{
     showOverlayText('STOP : 공간에 멈춰 주변을 살피세요.', true);
