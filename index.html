@@ -15,11 +15,15 @@
   }
   html,body{
     margin:0;height:100%;background:#000;color:#fff;
-    font-family:var(--ff-ui);overflow:hidden;
+    font-family:var(--ff-ui);
     -webkit-touch-callout:none;-webkit-tap-highlight-color:transparent;
+    overflow:hidden;
   }
   *,*::before,*::after{box-sizing:border-box;}
-  #view{position:fixed;inset:0;width:var(--vwpx);height:var(--vhpx);background:#000;z-index:0;}
+  #view{
+    position:fixed;inset:0;width:var(--vwpx);height:var(--vhpx);
+    background:#000;z-index:0;pointer-events:none;
+  }
   .proscenium{
     position:fixed;
     left:calc(var(--gap)+env(safe-area-inset-left));
@@ -30,28 +34,34 @@
     border-radius:var(--line-r);
     pointer-events:none;z-index:5;
   }
+  /* 중앙 정렬 오버레이 */
   #overlay{
     position:fixed;inset:0;
-    display:flex;align-items:center;justify-content:center;
-    background:rgba(0,0,0,.8);z-index:100;transition:opacity .5s ease;
+    display:flex;flex-direction:column;
+    align-items:center;justify-content:center;
+    background:rgba(0,0,0,.8);
+    z-index:100;transition:opacity .5s ease;
+    text-align:center;line-height:1.6;
   }
   #overlay.hidden{opacity:0;pointer-events:none;}
-  #overlayContent{
-    text-align:center;max-width:80vw;line-height:1.6;
-    display:flex;flex-direction:column;gap:16px;
+  .stageText{
+    font-size:clamp(16px,2.6vmin,24px);
+    white-space:pre-line;
   }
-  .stageText{font-size:clamp(16px,2.5vmin,22px);}
   .stageBtn{
-    border:1px solid #fff;background:transparent;color:#fff;
+    margin-top:20px;border:1px solid #fff;background:transparent;color:#fff;
     padding:.6em 1.4em;text-transform:uppercase;
     font-size:clamp(14px,2vmin,20px);cursor:pointer;
   }
   #infoText{
-    position:fixed;top:20px;left:50%;transform:translateX(-50%);
-    font-size:clamp(12px,1.8vmin,16px);opacity:.8;z-index:50;
+    position:fixed;inset:0;
+    display:flex;align-items:center;justify-content:center;
+    text-align:center;font-size:clamp(14px,2vmin,18px);
+    opacity:.8;z-index:50;line-height:1.5;
   }
   #countdown{
-    font-size:clamp(12px,1.8vmin,16px);opacity:.8;margin-top:10px;
+    font-size:clamp(12px,1.8vmin,16px);
+    opacity:.8;margin-top:14px;
   }
 </style>
 </head>
@@ -59,21 +69,18 @@
 <canvas id="view"></canvas>
 <div class="proscenium"></div>
 
-<!-- 검정박스 아님 -->
-<div id="infoText">프로그램 시작을 위해 화면을 터치한 후 카메라, 마이크, 위치 센서 허용을 눌러주세요.</div>
+<!-- 중앙 배치 안내문 (검정박스 X) -->
+<div id="infoText">프로그램 시작을 위해 화면을 터치한 후<br>카메라, 마이크, 위치 센서 허용을 눌러주세요.</div>
 
 <!-- 검정박스 -->
 <div id="overlay">
-  <div id="overlayContent">
-    <div id="msg" class="stageText"></div>
-    <button id="startBtn" class="stageBtn" style="display:none;">PRESS HERE TO START</button>
-    <div id="countdown" style="display:none;"></div>
-  </div>
+  <div id="msg" class="stageText"></div>
+  <button id="startBtn" class="stageBtn" style="display:none;">PRESS HERE TO START</button>
+  <div id="countdown" style="display:none;"></div>
 </div>
 
 <script>
 (()=>{
-
 let audioCtx;
 function beep(freq=880,dur=150){
   if(!audioCtx) audioCtx=new (window.AudioContext||window.webkitAudioContext)();
@@ -111,8 +118,9 @@ async function requestPermissions(){
   }catch{}
 }
 
-document.body.addEventListener('touchend', startSequence,{once:true});
-document.body.addEventListener('click', startSequence,{once:true});
+/* 터치 이벤트 window 전체로 확장 */
+window.addEventListener('touchstart', startSequence,{once:true,passive:true});
+window.addEventListener('click', startSequence,{once:true});
 
 async function startSequence(){
   infoText.style.display='none';
