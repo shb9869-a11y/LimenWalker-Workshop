@@ -16,41 +16,41 @@
     --vwpx:100vw; --vhpx:100vh;
     --gap:32px; --line-color:rgba(255,255,255,.9);
     --line-w:1px; --line-r:2px;
-    --ff:"Courier New", Courier, monospace; /* ★ 폰트 고정 */
+    --ff:"Courier New", Courier, monospace;
   }
   html,body{
     margin:0;height:100%;background:#000;color:#fff;
     font-family:var(--ff); overflow:hidden;
     -webkit-touch-callout:none; -webkit-tap-highlight-color:transparent;
   }
-  *,*::before,*::after{ box-sizing:border-box; font-family:var(--ff); } /* ★ 전역 상속 */
+  *,*::before,*::after{ box-sizing:border-box; font-family:var(--ff); }
   button,input,select,textarea{ font:inherit; color:inherit; }
 
-  /* 카메라 뷰 */
+  /* 레이어 스택: 카메라(0) ← 궤적(2) ← 레졸룸(4) ← UI(10) */
   #cameraView{
-    position:fixed; left:0; top:0; width:var(--vwpx); height:var(--vhpx);
+    position:fixed; inset:0;
+    width:var(--vwpx); height:var(--vhpx);
     object-fit:cover; background:#000; z-index:0;
     filter:grayscale(1) contrast(1.2);
-    will-change: transform; transform: translateZ(0); backface-visibility: hidden;
+    will-change: transform, opacity; transform: translateZ(0);
+    backface-visibility: hidden;
   }
-
-  /* 궤적 캔버스 */
   #trailCanvas{
-    position:fixed; left:0; top:0; width:var(--vwpx); height:var(--vhpx);
+    position:fixed; inset:0;
+    width:var(--vwpx); height:var(--vhpx);
     z-index:2; pointer-events:none; background:transparent;
+    will-change: opacity;
   }
-
-  /* VDO.Ninja(레졸룸) */
   #ninjaOverlay{
     position:fixed; left:50%; top:50%;
     width:var(--vwpx); height:var(--vhpx);
     transform:translate(-50%,-50%) scale(1); transform-origin:50% 50%;
     border:0; background:transparent; image-rendering:auto;
     z-index:4; pointer-events:none; opacity:0; transition:opacity .25s ease;
-    mix-blend-mode: lighten; /* 카메라를 덜 덮게 */
+    mix-blend-mode: lighten;
+    will-change: opacity, transform;
   }
 
-  /* 프로시니엄 */
   .proscenium{
     position:fixed;
     left:calc(var(--gap) + env(safe-area-inset-left));
@@ -62,12 +62,20 @@
     pointer-events:none; z-index:5;
   }
 
-  /* 중앙 검정박스 */
+  /* 중앙 안내(터치 통과) */
+  #infoText, #overlay{
+    position:fixed; inset:0; display:flex;
+    align-items:center; justify-content:center; flex-direction:column;
+    text-align:center;
+  }
+  #infoText{
+    font-size:clamp(14px,2vmin,18px); opacity:.88; z-index:8;
+    pointer-events:none; /* ★ 이벤트 통과, 중앙 고정 */
+  }
+
   #overlay{
-    position:fixed; left:0; top:0; width:var(--vwpx); height:var(--vhpx);
-    display:flex; align-items:center; justify-content:center; flex-direction:column;
     background:rgba(0,0,0,.65);
-    z-index:10; text-align:center; line-height:1.6;
+    z-index:10; line-height:1.6;
     transition:opacity .25s ease;
   }
   #overlay.hidden{ opacity:0; pointer-events:none; }
@@ -78,17 +86,7 @@
     padding:.6em 1.4em; text-transform:uppercase; margin-top:18px;
     font-size:clamp(14px,2vmin,20px); cursor:pointer;
   }
-
-  /* 처음 안내(검정박스 아님) */
-  #infoText{
-    position:fixed; left:0; top:0; width:var(--vwpx); height:var(--vhpx);
-    display:flex; align-items:center; justify-content:center; text-align:center;
-    font-size:clamp(14px,2vmin,18px); opacity:.88; z-index:8; pointer-events:auto;
-  }
-
-  #countdown{
-    font-size:clamp(12px,1.8vmin,16px); opacity:.8; margin-top:14px; text-align:center; display:none;
-  }
+  #countdown{ font-size:clamp(12px,1.8vmin,16px); opacity:.8; margin-top:14px; display:none; }
 </style>
 </head>
 <body>
@@ -119,10 +117,17 @@
 /* ===== Config ===== */
 const CONFIG = {
   ROOM_ID: "YOURROOMID",
-  REZ_SCALE: 0.65,
-  BLEND_WELCOME: 0.18,  // ★ 허용 직후에도 레졸룸을 계속 보이게 (아웃 방지)
-  BLEND_WALK:   0.18,
-  BLEND_STOP:   0.15
+  REZ_SCALE: 0.65,     // 레졸룸 소스 렌더 스케일(품질/부하 트레이드오프)
+  LINE_WIDTH: 0.6,     // ★ 더 얇은 점선
+  LINE_DASH: [1.5,10],
+
+  /* 상태별 레이어 비율(0~1) — 합이 1일 필요는 없음(독립 알파) */
+  LAYERS: {
+    WELCOME: { CAMERA: 1.00, NINJA: 0.18, TRAIL: 0.00 },
+    GUIDE:   { CAMERA: 1.00, NINJA: 0.18, TRAIL: 0.00 },
+    WALK:    { CAMERA: 0.95, NINJA: 0.18, TRAIL: 0.85 },
+    STOP:    { CAMERA: 0.95, NINJA: 0.15, TRAIL: 0.65 },
+  }
 };
 
 /* ===== Elements ===== */
@@ -158,6 +163,7 @@ if (visualViewport){
   visualViewport.addEventListener('scroll', setViewportVars);
 }
 addEventListener('orientationchange', ()=> setTimeout(setViewportVars,120));
+addEventListener('pageshow', ()=>{ setTimeout(()=>{ setViewportVars(); applyRezScale(); }, 60); });
 
 /* ===== Audio ===== */
 let audioCtx;
@@ -209,7 +215,6 @@ const injectedCss = encodeURIComponent(`
 `);
 const ninjaBase = `https://vdo.ninja/?view=${encodeURIComponent(CONFIG.ROOM_ID)}&clean&autostart&noaudio&codec=vp8&solo&transparent=1&css=${injectedCss}`;
 const ninjaUrl  = () => `${ninjaBase}&ts=${Date.now()}`;
-let desiredNinjaAlpha = CONFIG.BLEND_WELCOME;  // ★ 항상 유지할 목표 알파
 
 function applyRezScale(){
   const s = Math.max(0.2, Math.min(1, Number(CONFIG.REZ_SCALE)||1));
@@ -220,10 +225,13 @@ function applyRezScale(){
 }
 applyRezScale();
 
-function setNinjaBlend(alpha=desiredNinjaAlpha){
-  desiredNinjaAlpha = alpha;
-  ninja.style.opacity = '0'; void ninja.offsetHeight; /* 트랜지션 보장 */
-  ninja.style.opacity = String(alpha);
+/* ===== Layer ratio control ===== */
+let state = 'WELCOME';
+function applyLayerMix(){
+  const M = CONFIG.LAYERS[state] || CONFIG.LAYERS.WELCOME;
+  camView.style.opacity = String(M.CAMERA);
+  ninja.style.opacity   = String(M.NINJA);
+  trail.style.opacity   = String(M.TRAIL);
 }
 
 /* ===== Sensors & Trajectory ===== */
@@ -232,7 +240,6 @@ let drawingEnabled = false;
 let metersPerPixel = 1.2;
 const MAX_POINTS = 2500;
 const DECAY_START = 10_000, MAX_AGE = 60_000, MAX_JITTER = 18;
-const BASE_DASH = [2, 8];
 
 let motionMag = 0;
 function onMotion(e){
@@ -283,12 +290,13 @@ function jitterFor(age){
 }
 function drawTrajectory(){
   const now = performance.now();
+  // ★ 잔상 바탕 알파(낮을수록 선명)
   tctx.fillStyle = 'rgba(0,0,0,0.06)';
   tctx.fillRect(0,0,trail.clientWidth, trail.clientHeight);
   if(points.length < 2 || !drawingEnabled) return;
   tctx.save();
-  tctx.lineWidth = 0.8;
-  tctx.setLineDash(BASE_DASH);
+  tctx.lineWidth = CONFIG.LINE_WIDTH;
+  tctx.setLineDash(CONFIG.LINE_DASH);
   for(let i=1;i<points.length;i++){
     const a = points[i-1], b = points[i];
     const age = now - b.t;
@@ -363,7 +371,6 @@ function onPress(el, handler){
 }
 
 /* ===== Flow ===== */
-/* 1) 첫 터치: 권한 후에도 카메라/레졸룸이 절대 아웃되지 않게 즉시 표시 유지 */
 onPress(window, async ()=>{
   initAudioContext(); keepScreenOn();
   infoText.style.display='none';
@@ -373,24 +380,22 @@ onPress(window, async ()=>{
 
   applyRezScale();
   if(!ninja.contentWindow) ninja.src = ninjaUrl();
-  setNinjaBlend(CONFIG.BLEND_WELCOME);   // ★ 허용 직후부터 항상 보이게 (아웃 방지)
 
+  state='WELCOME'; applyLayerMix();
   stepWelcome();
 });
 
-/* 2) WELCOME → (3초 후 비프) → PRESS 버튼 */
 function stepWelcome(){
   showOverlayText('WELCOME TO LIMENWALKER WORKSHOP', true);
   setTimeout(()=>{
     beep(880,120);
-    msg.textContent='';
+    document.getElementById('msg').textContent='';
     countdown.style.display='none';
     startBtn.style.display='inline-block';
-    setNinjaBlend(CONFIG.BLEND_WELCOME); // 계속 유지
+    state='WELCOME'; applyLayerMix(); // 유지
   },3000);
 }
 
-/* 3) PRESS → 안내문 + 타이머 + 마이크 */
 let guideTimer=null;
 onPress(startBtn, async ()=>{
   if(guideTimer) return;
@@ -398,7 +403,8 @@ onPress(startBtn, async ()=>{
   startBtn.style.display='none';
   await startMic().catch(()=>{});
   showOverlayText(formatGuide(), false);
-  setNinjaBlend(CONFIG.BLEND_WELCOME);  // 안내 중에도 유지(아웃 금지)
+
+  state='GUIDE'; applyLayerMix();
 
   let sec=60;
   countdown.style.display='block';
@@ -414,13 +420,14 @@ onPress(startBtn, async ()=>{
   },1000);
 });
 
-/* 4) WALK → STOP → 오버레이만 사라짐 (카메라/레졸룸 유지) */
 function stepWalkStop(){
   drawingEnabled = true;
-  setNinjaBlend(CONFIG.BLEND_WALK);
+
+  state='WALK'; applyLayerMix();
   showOverlayText('WALK : 공간을 걸어보세요.', true);
+
   setTimeout(()=>{
-    setNinjaBlend(CONFIG.BLEND_STOP);
+    state='STOP'; applyLayerMix();
     showOverlayText('STOP : 공간에 멈춰 주변을 살피세요.', true);
     setTimeout(()=>{ hideOverlay(); }, 3000);
   },3000);
@@ -438,22 +445,22 @@ function formatGuide(){
   return lines.map((l,i)=>`${i+1}. ${l}`).join("\n\n");
 }
 
-/* 복귀/회전 시 카메라/레졸룸 유지 (아웃 금지) */
+/* 복귀/회전 시 UI & 레이어 재적용 */
 document.addEventListener('visibilitychange', ()=>{
   if(document.visibilityState==='visible'){
     setViewportVars(); applyRezScale();
     camView.play().catch(()=>{});
     if(!currentStream){ restartCameraSoon(50); }
-    setNinjaBlend(desiredNinjaAlpha);  // ★ 목표 알파 재적용(깜빡임 방지)
+    applyLayerMix();                          // ★ 현재 상태 비율 그대로 재적용
     if(audioCtx && audioCtx.state==='suspended'){ audioCtx.resume().catch(()=>{}); }
   }
 });
 window.addEventListener('orientationchange', ()=>{
   setTimeout(()=>{
-    setViewportVars();
+    setViewportVars(); applyRezScale();
     camView.play().catch(()=>{});
     if(!currentStream){ restartCameraSoon(50); }
-    setNinjaBlend(desiredNinjaAlpha);  // ★ 유지
+    applyLayerMix();
   },120);
 });
 
