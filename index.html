@@ -47,7 +47,7 @@
     transform:translate(-50%,-50%) scale(1); transform-origin:50% 50%;
     border:0; background:transparent; image-rendering:auto;
     z-index:4; pointer-events:none; opacity:0; transition:opacity .25s ease;
-    mix-blend-mode: lighten;
+    mix-blend-mode: lighten; /* 필요시 screen으로 변경 가능 */
     will-change: opacity, transform;
   }
 
@@ -70,7 +70,7 @@
   }
   #infoText{
     font-size:clamp(14px,2vmin,18px); opacity:.88; z-index:8;
-    pointer-events:none; /* ★ 이벤트 통과, 중앙 고정 */
+    pointer-events:none; /* 이벤트 통과, 중앙 고정 */
   }
 
   #overlay{
@@ -118,15 +118,15 @@
 const CONFIG = {
   ROOM_ID: "YOURROOMID",
   REZ_SCALE: 0.65,     // 레졸룸 소스 렌더 스케일(품질/부하 트레이드오프)
-  LINE_WIDTH: 0.6,     // ★ 더 얇은 점선
+  LINE_WIDTH: 0.6,     // 더 얇은 점선
   LINE_DASH: [1.5,10],
 
-  /* 상태별 레이어 비율(0~1) — 합이 1일 필요는 없음(독립 알파) */
+  /* 상태별 레이어 비율(0~1) */
   LAYERS: {
-    WELCOME: { CAMERA: 1.00, NINJA: 0.18, TRAIL: 0.00 },
-    GUIDE:   { CAMERA: 1.00, NINJA: 0.18, TRAIL: 0.00 },
-    WALK:    { CAMERA: 0.95, NINJA: 0.18, TRAIL: 0.85 },
-    STOP:    { CAMERA: 0.95, NINJA: 0.15, TRAIL: 0.65 },
+    WELCOME: { CAMERA: 1.00, NINJA: 0.35, TRAIL: 0.00 },
+    GUIDE:   { CAMERA: 1.00, NINJA: 0.35, TRAIL: 0.00 },
+    WALK:    { CAMERA: 0.95, NINJA: 0.30, TRAIL: 0.85 },
+    STOP:    { CAMERA: 0.95, NINJA: 0.25, TRAIL: 0.65 },
   }
 };
 
@@ -290,8 +290,7 @@ function jitterFor(age){
 }
 function drawTrajectory(){
   const now = performance.now();
-  // ★ 잔상 바탕 알파(낮을수록 선명)
-  tctx.fillStyle = 'rgba(0,0,0,0.06)';
+  tctx.fillStyle = 'rgba(0,0,0,0.06)';  // 잔상 바탕 알파
   tctx.fillRect(0,0,trail.clientWidth, trail.clientHeight);
   if(points.length < 2 || !drawingEnabled) return;
   tctx.save();
@@ -451,7 +450,7 @@ document.addEventListener('visibilitychange', ()=>{
     setViewportVars(); applyRezScale();
     camView.play().catch(()=>{});
     if(!currentStream){ restartCameraSoon(50); }
-    applyLayerMix();                          // ★ 현재 상태 비율 그대로 재적용
+    applyLayerMix();                          // 현재 상태 비율 그대로 재적용
     if(audioCtx && audioCtx.state==='suspended'){ audioCtx.resume().catch(()=>{}); }
   }
 });
