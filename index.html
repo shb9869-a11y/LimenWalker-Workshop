@@ -17,8 +17,7 @@
     --line-color: rgba(255,255,255,.9);
     --line-w: 1px; --line-r: 2px;
 
-    /* === UI Typography (통일) === */
-    --ff-ui: "Courier New", Courier, monospace; /* Welcome과 동일 계열 */
+    --ff-ui: "Courier New", Courier, monospace;
     --stage-fs: clamp(14px, 2.0vmax, 22px);
     --btn-pad-y: .45em;
     --btn-pad-x: 1.0em;
@@ -27,33 +26,26 @@
     --line-height: 1.4;
   }
   @media (orientation:landscape){
-    :root{
-      --gap: 24px;
-      --stage-fs: clamp(13px, 1.8vmax, 20px);
-    }
+    :root{ --gap: 24px; --stage-fs: clamp(13px, 1.8vmax, 20px); }
   }
 
   html,body{
     margin:0;height:100%;background:#000;overflow:hidden;
     -webkit-touch-callout:none;-webkit-tap-highlight-color:transparent;
-    font-family: var(--ff-ui); font-size:16px; line-height:var(--line-height);
+    font-family:var(--ff-ui); font-size:16px; line-height:var(--line-height);
     text-rendering:optimizeLegibility; -webkit-font-smoothing:antialiased;
   }
+  *,*::before,*::after{ box-sizing:border-box; }
+  button,input,select,textarea{ font:inherit; color:inherit; }
+  button{ -webkit-appearance:none; appearance:none; background:none; border:none; padding:0; margin:0; }
 
-  /* 폰트/스타일 통일을 위해 모든 기본 폼요소도 상속 */
-  *, *::before, *::after{ box-sizing:border-box; }
-  button, input, select, textarea{ font: inherit; color: inherit; }
-  button{
-    -webkit-appearance:none; appearance:none; background:none; border:none; padding:0; margin:0;
-  }
-
-  /* 관객 카메라(흑백) */
+  /* 카메라 캔버스 */
   #view{
     position:fixed;left:0;top:0;width:var(--vwpx);height:var(--vhpx);
     display:block;z-index:0
   }
 
-  /* 레졸룸 오버레이 */
+  /* VDO.Ninja 오버레이 (로드 즉시 켜짐) */
   #ninjaOverlay{
     position:fixed;left:50%;top:50%;
     width:var(--vwpx);height:var(--vhpx);
@@ -63,7 +55,7 @@
     image-rendering:auto;will-change:transform
   }
 
-  /* 프로시니엄 */
+  /* 프로시니엄 라인 */
   .proscenium{
     position:fixed;
     left:calc(var(--gap) + env(safe-area-inset-left));
@@ -75,44 +67,15 @@
     box-sizing:border-box;z-index:90;pointer-events:none;transform:translateZ(0)
   }
 
-  /* IN/OUT (폰트 상속 + 외곽 없앰) */
+  /* IN/OUT */
   .controls{
     position:fixed;right:calc(16px + env(safe-area-inset-right));
     bottom:calc(16px + env(safe-area-inset-bottom));
     z-index:100;display:flex;gap:8px
   }
-  .uiBtn{
-    padding:.4em .8em; cursor:pointer; user-select:none;
-    color:#fff; opacity:.9; border:none; background:transparent;
-    text-transform:uppercase; letter-spacing:var(--letter-space); line-height:var(--line-height);
-  }
+  .uiBtn{ padding:.4em .8em; cursor:pointer; user-select:none; color:#fff; opacity:.9; background:transparent; text-transform:uppercase; letter-spacing:var(--letter-space); }
 
-  /* 오버레이(모든 자식에 폰트 상속 강제) */
-  #overlay{
-    position:fixed;left:0;top:0;width:var(--vwpx);height:var(--vhpx);
-    z-index:200;display:flex;align-items:center;justify-content:center;
-    padding:20px;color:#fff;background:rgba(0,0,0,.7); font-family:var(--ff-ui);
-  }
-  #overlay *{ font-family:inherit; letter-spacing:var(--letter-space); line-height:var(--line-height); }
-  #overlayContent{
-    text-align:center;transition:opacity .45s ease;
-    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;
-  }
-  .hidden{opacity:0}
-
-  /* 시작 버튼/문구(통일 폰트) */
-  .stageBtn{
-    display:inline-block;margin:8px auto;padding:var(--btn-pad-y) var(--btn-pad-x);
-    border:var(--btn-border) solid #fff;border-radius:0;
-    background:transparent;color:#fff;cursor:pointer;user-select:none;
-    text-transform:uppercase;font-size:var(--stage-fs);
-  }
-  .stageText{
-    font-size:var(--stage-fs);
-    text-transform:uppercase;
-  }
-
-  /* HTTPS 안내 */
+  /* HTTPS 안내 (필요 시에만) */
   #httpsBlock{
     position:fixed;inset:0;z-index:300;display:none;align-items:center;justify-content:center;
     background:rgba(0,0,0,.88);color:#fff;padding:20px;text-align:center
@@ -120,11 +83,17 @@
   #httpsInner{max-width:560px}
   .kbd{display:inline-block;border:1px solid #888;padding:2px 6px;border-radius:4px;background:#111}
 
-  /* 진단 HUD */
+  /* 디버그 HUD (3탭 토글) */
   #diag{
     position:fixed;left:8px;bottom:8px;z-index:9999;
     background:rgba(0,0,0,.7);color:#0f0;font:12px/1.4 var(--ff-ui);
     padding:8px;border:1px solid #0f0;border-radius:6px;display:none;white-space:pre
+  }
+
+  /* 보이지 않는 ‘첫 제스처’ 캡처 레이어 (텍스트 없이 투명) */
+  #activationShim{
+    position:fixed;inset:0;z-index:250; /* 카메라 뒤, 오버레이 앞 */
+    background:transparent; /* 완전 투명: 화면엔 아무것도 안 보임 */
   }
 </style>
 </head>
@@ -143,13 +112,7 @@
     <button class="uiBtn" id="btnOut">OUT</button>
   </div>
 
-  <div id="overlay">
-    <div id="overlayContent">
-      <button id="startBtn" class="stageBtn" role="button" aria-label="Press to start">PRESS HERE TO START</button>
-      <div id="msg" class="stageText" style="display:none;"></div>
-    </div>
-  </div>
-
+  <!-- HTTPS 안내 (필요 시 자동 표시) -->
   <div id="httpsBlock">
     <div id="httpsInner">
       <div style="font-size:18px;margin-bottom:10px"><b>보안 연결(HTTPS) 필요</b></div>
@@ -165,6 +128,9 @@
       </div>
     </div>
   </div>
+
+  <!-- 눈에 보이지 않지만 첫 터치를 잡아 권한 요청 재시도 -->
+  <div id="activationShim"></div>
 
   <div id="diag"></div>
 
@@ -191,7 +157,7 @@ btnCopy?.addEventListener('click', async ()=>{ if(!CONFIG.HTTPS_ORIGIN) return a
 btnOpen?.addEventListener('click', ()=>{ if(!CONFIG.HTTPS_ORIGIN) return alert('CONFIG.HTTPS_ORIGIN 비어있음'); location.href=CONFIG.HTTPS_ORIGIN; });
 if(!tryHttpsRedirect() && shouldForceHttps()) httpsBlock.style.display='flex';
 
-/* ===== VDO.Ninja ===== */
+/* ===== VDO.Ninja (로드 즉시 켜짐) ===== */
 const injectedCss=encodeURIComponent(`
   html,body{background:transparent!important;margin:0!important;overflow:hidden!important;}
   #container,.container{background:transparent!important;}
@@ -200,19 +166,15 @@ const injectedCss=encodeURIComponent(`
 const ninjaBase=`https://vdo.ninja/?view=${encodeURIComponent(CONFIG.ROOM_ID)}&clean&autostart&noaudio&codec=vp8&solo&transparent=1&css=${injectedCss}`;
 const ninjaUrl=()=>`${ninjaBase}&ts=${Date.now()}`;
 
-/* ===== Refs ===== */
 const view=document.getElementById('view');
 const vctx=view.getContext('2d',{alpha:false});
 const ninja=document.getElementById('ninjaOverlay');
 const btnIn=document.getElementById('btnIn');
 const btnOut=document.getElementById('btnOut');
-const overlayPanel=document.getElementById('overlay');
-const overlayContent=document.getElementById('overlayContent');
-const startBtn=document.getElementById('startBtn');
-const msgBox=document.getElementById('msg');
 const diag=document.getElementById('diag');
+const shim=document.getElementById('activationShim');
 
-/* ===== Viewport fix + relayout ===== */
+/* ===== Viewport fix ===== */
 function setViewportVars(){
   const vv=visualViewport, w=Math.round((vv?.width||innerWidth)), h=Math.round((vv?.height||innerHeight));
   document.documentElement.style.setProperty('--vwpx', w+'px');
@@ -242,11 +204,9 @@ function fitCamera(){
   proc.width=Math.max(1,Math.floor(cssW*scale)); proc.height=Math.max(1,Math.floor(cssH*scale));
 }
 async function startCamera(){
-  try{
-    const s=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'},audio:false});
-    cam.srcObject=s; cam.addEventListener('loadedmetadata', ()=>scheduleLayoutRefresh(0), {once:true});
-    await cam.play().catch(()=>{});
-  }catch(e){ console.warn('Camera start failed:', e); }
+  const s=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'},audio:false});
+  cam.srcObject=s; cam.addEventListener('loadedmetadata', ()=>scheduleLayoutRefresh(0), {once:true});
+  await cam.play().catch(()=>{});
 }
 let _loop=false; function ensureLoop(){ if(_loop) return; _loop=true; loop(); }
 function loop(){
@@ -272,7 +232,7 @@ function loop(){
   }
 }
 
-/* ===== Audio / Sensors (+beep, mic gain up) ===== */
+/* ===== Audio / Sensors / Mic ===== */
 let audioCtx=null, mixBus=null, motionGain=null, masterGain=null, panSetter=null, micStream=null;
 const VOL_BASE=0.20,VOL_MAX_ADD=0.55,SMOOTH_TC=0.08,CTRL_SMOOTH_ALPHA=0.12,DEADZONE_VOL_DEG=5,DEADZONE_PAN_DEG=3,VOL_TILT_LIMIT=60,PAN_LIMIT_DEG=45;
 function initAudio(){
@@ -294,22 +254,19 @@ function initAudio(){
   panOut.connect(motionGain); motionGain.connect(masterGain); masterGain.connect(audioCtx.destination);
 }
 async function startMic(){
-  try{
-    if(micStream) return;
-    const s=await navigator.mediaDevices.getUserMedia({ audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:true}, video:false });
-    micStream=s; const src=audioCtx.createMediaStreamSource(s);
-    const hpf=audioCtx.createBiquadFilter(); hpf.type='highpass'; hpf.frequency.value=120;
-    const comp=audioCtx.createDynamicsCompressor(); comp.threshold.value=-40; comp.knee.value=18; comp.ratio.value=2.0; comp.attack.value=0.003; comp.release.value=0.12;
-    const wet=audioCtx.createGain(); wet.gain.value=1.0;
-    const dry=audioCtx.createGain(); dry.gain.value=0.30;
-    const convolver=audioCtx.createConvolver(); convolver.buffer=makeIR(2.4,2.2);
-    const micBoost=audioCtx.createGain(); micBoost.gain.value=1.8;
-    src.connect(hpf).connect(comp);
-    const split=audioCtx.createGain(); comp.connect(split);
-    split.connect(dry); split.connect(convolver).connect(wet);
-    const bus=audioCtx.createGain(); dry.connect(bus); wet.connect(bus);
-    bus.connect(micBoost).connect(mixBus);
-  }catch(e){ console.warn('Mic start failed:', e); }
+  const s=await navigator.mediaDevices.getUserMedia({ audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:true}, video:false });
+  micStream=s; const src=audioCtx.createMediaStreamSource(s);
+  const hpf=audioCtx.createBiquadFilter(); hpf.type='highpass'; hpf.frequency.value=120;
+  const comp=audioCtx.createDynamicsCompressor(); comp.threshold.value=-40; comp.knee.value=18; comp.ratio.value=2.0; comp.attack.value=0.003; comp.release.value=0.12;
+  const wet=audioCtx.createGain(); wet.gain.value=1.0;
+  const dry=audioCtx.createGain(); dry.gain.value=0.30;
+  const convolver=audioCtx.createConvolver(); convolver.buffer=makeIR(2.4,2.2);
+  const micBoost=audioCtx.createGain(); micBoost.gain.value=1.8;
+  src.connect(hpf).connect(comp);
+  const split=audioCtx.createGain(); comp.connect(split);
+  split.connect(dry); split.connect(convolver).connect(wet);
+  const bus=audioCtx.createGain(); dry.connect(bus); wet.connect(bus);
+  bus.connect(micBoost).connect(mixBus);
 }
 function makeIR(sec=2.4,decay=2.2){
   const rate=audioCtx.sampleRate,len=Math.floor(rate*sec),ir=audioCtx.createBuffer(2,len,rate);
@@ -318,8 +275,16 @@ function makeIR(sec=2.4,decay=2.2){
 }
 let sensorsReady=false, latestOri={beta:0,gamma:0}, smVol=VOL_BASE, smPan=0;
 async function sensorPerm(){
-  try{ if(typeof DeviceOrientationEvent!=='undefined' && typeof DeviceOrientationEvent.requestPermission==='function'){ const r=await DeviceOrientationEvent.requestPermission(); if(r==='granted') sensorsReady=true; } else sensorsReady=true; }catch{}
-  try{ if(typeof DeviceMotionEvent!=='undefined' && typeof DeviceMotionEvent.requestPermission==='function'){ const r=await DeviceMotionEvent.requestPermission(); if(r==='granted') sensorsReady=true; } }catch{}
+  try{
+    if(typeof DeviceOrientationEvent!=='undefined' && typeof DeviceOrientationEvent.requestPermission==='function'){
+      const r=await DeviceOrientationEvent.requestPermission(); if(r==='granted') sensorsReady=true;
+    } else { sensorsReady=true; }
+  }catch{}
+  try{
+    if(typeof DeviceMotionEvent!=='undefined' && typeof DeviceMotionEvent.requestPermission==='function'){
+      const r=await DeviceMotionEvent.requestPermission(); if(r==='granted') sensorsReady=true;
+    }
+  }catch{}
 }
 function initOrientation(){ addEventListener('deviceorientation',e=>{ latestOri.beta=e.beta??0; latestOri.gamma=e.gamma??0; },{passive:true}); }
 function smooth(t,c,a=CTRL_SMOOTH_ALPHA){ return c+(t-c)*a; }
@@ -338,15 +303,14 @@ function ctlLoop(){
   if(panSetter) panSetter(smPan);
   if(motionGain){ const now=audioCtx.currentTime; try{ motionGain.gain.setTargetAtTime(smVol,now,SMOOTH_TC);}catch{ motionGain.gain.value=smVol; } }
 }
-function beep(duration=120, freq=880){
+
+/* ===== Geolocation (가능하면 즉시 요청) ===== */
+async function requestGeo(){
+  if(!("geolocation" in navigator)) return;
   try{
-    if(!audioCtx) return;
-    const osc=audioCtx.createOscillator(), g=audioCtx.createGain();
-    osc.type='square'; osc.frequency.value=freq; g.gain.value=0.0001;
-    osc.connect(g).connect(audioCtx.destination);
-    const t=audioCtx.currentTime; g.gain.exponentialRampToValueAtTime(0.25, t+0.02);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + duration/1000);
-    osc.start(t); osc.stop(t + duration/1000 + 0.02);
+    await new Promise((res,rej)=>{
+      navigator.geolocation.getCurrentPosition(()=>res(),()=>rej(),{enableHighAccuracy:true,timeout:4000,maximumAge:0});
+    });
   }catch{}
 }
 
@@ -359,57 +323,70 @@ function applyRezScale(){
   ninja.style.transform=`translate(-50%,-50%) scale(${1/s})`;
 }
 
-/* ===== Ninja overlay ===== */
+/* ===== Ninja overlay: 로드 즉시 표시 ===== */
 (function preloadOverlay(){ ninja.src=ninjaUrl(); })();
 function setOverlay(on){ ninja.style.opacity = on ? String(CONFIG.BLEND) : '0'; if (on && !ninja.contentWindow) ninja.src=ninjaUrl(); }
-btnIn.addEventListener('click', ()=> setOverlay(true));
-btnOut.addEventListener('click',()=> setOverlay(false));
 setInterval(()=>{ if(ninja.style.opacity!=='0'){ ninja.src=ninjaUrl(); } }, 60000);
 
-/* ===== Overlay flow ===== */
-function showMsg(text){
-  startBtn.style.display='none';
-  msgBox.style.display='block';
-  msgBox.textContent=text;
-}
-function fadeOutOverlay(afterMs=0){
-  setTimeout(()=>{ overlayContent.classList.add('hidden'); setTimeout(()=>{ overlayPanel.style.display='none'; }, 450); }, afterMs);
-}
-function onPress(el, handler){
-  el.addEventListener('touchend', (e)=>{ e.preventDefault(); handler(); }, {passive:false});
-  el.addEventListener('click', handler);
-}
-onPress(startBtn, async ()=>{
-  initAudio(); if(audioCtx.state==='suspended'){ await audioCtx.resume().catch(()=>{}); }
-  beep();
-  await sensorPerm().catch(()=>{});
-  await startMic().catch(()=>{});
-  initOrientation(); ctlLoop();
-  await startCamera(); fitCamera(); ensureLoop();
-  applyRezScale();
+/* ===== 권한/초기화 시퀀스 ===== */
+let bootTried=false;
+async function bootSequence(){
+  if(bootTried) return; bootTried=true;
 
-  showMsg('WELCOME TO HISTORY OF NIGHTMARE');
-  // 문구를 버튼처럼 (동일 폰트/사이즈)
-  Object.assign(msgBox.style,{
-    border:'var(--btn-border) solid #fff',
-    display:'inline-block',
-    padding:'var(--btn-pad-y) var(--btn-pad-x)',
-    marginTop:'6px',
-    cursor:'pointer',
-    userSelect:'none'
-  });
+  // 1) Ninja 즉시 표시
+  applyRezScale(); setOverlay(true);
 
-  let second=false;
-  const step2=()=>{
-    if(second) return; second=true; beep();
-    msgBox.style.border='none'; msgBox.style.padding='0';
-    showMsg('SHOW WILL BIGIN SOON');
-    setTimeout(()=>{ showMsg('PLEASE CAPTURING THE MOMENT'); setTimeout(()=>{ fadeOutOverlay(0); setOverlay(true); }, 3000); }, 3000);
-  };
-  onPress(msgBox, step2);
-});
+  // 2) 오디오/센서 초기화
+  initAudio();
+  // 일부 브라우저는 resume에 제스처 필요 → 실패해도 무시
+  try{ await audioCtx.resume(); }catch{}
 
-/* ===== HUD ===== */
+  // 3) 위치, 센서 권한 시도 (센서는 iOS에선 제스처 필요할 수 있음)
+  requestGeo().catch(()=>{});
+  initOrientation();
+
+  // 4) 카메라/마이크: 제스처 필요 없는 환경은 즉시 허용창 뜸.
+  try{
+    await startCamera();
+  }catch(e){
+    // 제스처 필요 시 재시도는 아래 activationShim에서 처리
+  }
+  ensureLoop();
+
+  try{
+    await startMic();
+  }catch(e){
+    // 제스처 필요 시 재시도는 아래 activationShim에서 처리
+  }
+
+  // 5) 센서 권한 요청 (iOS는 반드시 제스처 필요)
+  try{ await sensorPerm(); }catch{}
+}
+
+/* 첫 로드에서 한 번 시도 */
+document.addEventListener('DOMContentLoaded', bootSequence);
+
+/* 제스처 필요 환경 대응: 화면 어디든 첫 터치/클릭에서 재시도 */
+async function activateOnce(){
+  // iOS 권한 재요청
+  try{ await audioCtx?.resume(); }catch{}
+  try{ await sensorPerm(); }catch{}
+  // 카메라/마이크 재시도
+  try{ await startCamera(); }catch{}
+  try{ await startMic(); }catch{}
+  // 완료 후 보이지 않는 캡처 레이어 제거
+  shim.removeEventListener('pointerdown', activateOnce);
+  shim.removeEventListener('click', activateOnce);
+  shim.style.display='none';
+}
+shim.addEventListener('pointerdown', activateOnce, {once:true, passive:true});
+shim.addEventListener('click', activateOnce, {once:true});
+
+/* IN/OUT 오버레이 토글 */
+btnIn.addEventListener('click', ()=> setOverlay(true));
+btnOut.addEventListener('click',()=> setOverlay(false));
+
+/* HUD (3탭) */
 (function(){
   let show=false,taps=0,last=0;
   addEventListener('touchend', ()=>{
@@ -418,9 +395,10 @@ onPress(startBtn, async ()=>{
   });
   async function probe(){
     const secure=window.isSecureContext, a2hs=matchMedia('(display-mode: standalone)').matches;
-    let camP='unknown', micP='unknown';
+    let camP='unknown', micP='unknown', geo='unknown';
     try{ const ps=await navigator.permissions.query({name:'camera'}).catch(()=>null); camP=ps?ps.state:'n/a'; }catch{}
     try{ const ps=await navigator.permissions.query({name:'microphone'}).catch(()=>null); micP=ps?ps.state:'n/a'; }catch{}
+    try{ const ps=await navigator.permissions.query({name:'geolocation'}).catch(()=>null); geo=ps?ps.state:'n/a'; }catch{}
     diag.textContent =
 `secureContext: ${secure}
 display-mode: ${a2hs?'standalone':'browser'}
@@ -428,20 +406,21 @@ viewport: ${innerWidth}x${innerHeight}
 rez-scale: ${CONFIG.REZ_SCALE}
 camera perm: ${camP}
 microphone perm: ${micP}
+geolocation perm: ${geo}
 time: ${new Date().toLocaleTimeString()}`;
     if(diag.style.display==='block') setTimeout(probe, 800);
   }
 })();
 
-/* ===== Visibility ===== */
+/* 가시성 복귀 시 재개/리레이아웃 */
 document.addEventListener('visibilitychange', ()=>{
   if(document.visibilityState==='visible'){
     if(audioCtx && audioCtx.state==='suspended'){ audioCtx.resume().catch(()=>{}); }
     scheduleLayoutRefresh(0);
   }
 });
-applyRezScale();
-fitCamera();
+
+fitCamera(); applyRezScale();
 
 })();
 </script>
