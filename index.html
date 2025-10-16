@@ -30,7 +30,7 @@
   .stageText{font-size:clamp(14px,2vmin,20px);white-space:pre-line;max-width:90vw;text-align:left;}
   .centerText{text-align:center;white-space:pre-line;font-size:clamp(16px,2.6vmin,24px);}
   .stageBtn{
-    margin-top:20px;border:1px solid #fff;background:transparent;color:#fff;
+    border:1px solid #fff;background:transparent;color:#fff;
     padding:.6em 1.4em;text-transform:uppercase;font-size:clamp(14px,2vmin,20px);
     cursor:pointer;
   }
@@ -89,22 +89,32 @@ function showOverlay(txt,isCenter=true){
 }
 function hideOverlay(){overlay.classList.add('hidden');}
 
-/* --- 1. 첫 터치 --- */
+/* --- 1. 첫 터치: 권한 + 카메라 --- */
 window.addEventListener('touchstart', firstTouch,{once:true});
 window.addEventListener('click', firstTouch,{once:true});
+
 async function firstTouch(){
   initAudioContext();
   infoText.style.display='none';
   await requestPermissions();
-  step1();
+  stepWelcome();
 }
 
-/* --- 권한 요청 + 카메라 시작 --- */
+/* --- 권한 요청 + 후면 카메라 시작 --- */
 async function requestPermissions(){
   try{
-    cameraStream=await navigator.mediaDevices.getUserMedia({video:true,audio:true});
+    cameraStream=await navigator.mediaDevices.getUserMedia({
+      video:{ facingMode:{exact:"environment"} }, // ✅ 후면 카메라
+      audio:true
+    });
     camView.srcObject=cameraStream;
-  }catch(e){console.warn("Camera error",e);}
+  }catch(e){
+    console.warn("Camera error, fallback to any:",e);
+    try{
+      cameraStream=await navigator.mediaDevices.getUserMedia({video:true,audio:true});
+      camView.srcObject=cameraStream;
+    }catch(err){console.error("Camera failed:",err);}
+  }
   try{if(navigator.geolocation)navigator.geolocation.getCurrentPosition(()=>{},()=>{});}catch{}
   try{
     if(typeof DeviceOrientationEvent!=='undefined'&&typeof DeviceOrientationEvent.requestPermission==='function'){
@@ -118,17 +128,18 @@ async function requestPermissions(){
   }catch{}
 }
 
-/* --- 2. Welcome → Press --- */
-function step1(){
+/* --- 2. WELCOME 화면 --- */
+function stepWelcome(){
   showOverlay('WELCOME TO LIMENWALKER WORKSHOP',true);
   setTimeout(()=>{
     beep(880,120);
-    msg.textContent='PRESS HERE TO START';
+    // 화면 교체 → PRESS 버튼만 표시
+    msg.textContent='';
     startBtn.style.display='inline-block';
   },3000);
 }
 
-/* --- 3. Start 클릭 → 안내문 + 카운트다운 --- */
+/* --- 3. PRESS 버튼 클릭 → 안내문 --- */
 startBtn.addEventListener('click',()=>{
   beep(660,150);
   startBtn.style.display='none';
@@ -147,7 +158,7 @@ startBtn.addEventListener('click',()=>{
   },1000);
 });
 
-/* --- 안내문 넘버링 출력 --- */
+/* --- 4. 안내문 넘버링 출력 --- */
 function formatGuide(){
   const lines=[
     "안녕하세요. 리멘워커 워크숍의 첫 번째 워크숍 발표를 찾아와주신 여러분에게 감사의 인사를 올립니다.",
