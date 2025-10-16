@@ -11,49 +11,64 @@
     overflow:hidden;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent;
   }
   *,*::before,*::after{box-sizing:border-box;}
+  video#cameraView{
+    position:fixed;inset:0;width:100%;height:100%;object-fit:cover;
+    filter:grayscale(1) contrast(1.2);
+    z-index:0;background:#000;
+  }
   .proscenium{
     position:fixed;inset:2%;border:1px solid rgba(255,255,255,.9);
     border-radius:2px;pointer-events:none;z-index:5;
   }
   #overlay{
-    position:fixed;inset:0;display:flex;flex-direction:column;
-    align-items:center;justify-content:center;
-    background:rgba(0,0,0,.85);z-index:10;text-align:center;
-    line-height:1.6;transition:opacity .4s ease;
+    position:fixed;inset:0;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    background:rgba(0,0,0,.8);z-index:10;
+    text-align:center;line-height:1.6;transition:opacity .4s ease;
   }
   #overlay.hidden{opacity:0;pointer-events:none;}
-  .stageText{font-size:clamp(16px,2.6vmin,24px);white-space:pre-line;}
+  .stageText{font-size:clamp(14px,2vmin,20px);white-space:pre-line;max-width:90vw;text-align:left;}
+  .centerText{text-align:center;white-space:pre-line;font-size:clamp(16px,2.6vmin,24px);}
   .stageBtn{
     margin-top:20px;border:1px solid #fff;background:transparent;color:#fff;
-    padding:.6em 1.4em;text-transform:uppercase;
-    font-size:clamp(14px,2vmin,20px);cursor:pointer;
+    padding:.6em 1.4em;text-transform:uppercase;font-size:clamp(14px,2vmin,20px);
+    cursor:pointer;
   }
   #infoText{
     position:fixed;inset:0;display:flex;align-items:center;justify-content:center;
-    text-align:center;font-size:clamp(14px,2vmin,18px);
-    opacity:.8;z-index:2;line-height:1.5;
+    text-align:center;font-size:clamp(14px,2vmin,18px);opacity:.8;z-index:20;
   }
-  #countdown{font-size:clamp(12px,1.8vmin,16px);opacity:.8;margin-top:14px;}
+  #countdown{font-size:clamp(12px,1.8vmin,16px);opacity:.8;margin-top:14px;text-align:center;}
 </style>
 </head>
 <body>
+<video id="cameraView" autoplay muted playsinline></video>
 <div class="proscenium"></div>
-<div id="infoText">프로그램 시작을 위해 화면을 터치한 후<br>카메라, 마이크, 위치 센서 허용을 눌러주세요.</div>
+
+<div id="infoText">
+  프로그램 시작을 위해 화면을 터치한 후<br>
+  카메라, 마이크, 위치 센서 허용을 눌러주세요.
+</div>
 
 <div id="overlay" class="hidden">
-  <div id="msg" class="stageText"></div>
+  <div id="msg" class="centerText"></div>
   <button id="startBtn" class="stageBtn" style="display:none;">PRESS HERE TO START</button>
   <div id="countdown" style="display:none;"></div>
 </div>
 
 <script>
 (()=>{
-let audioCtx;
+let audioCtx, cameraStream;
+const overlay=document.getElementById('overlay');
+const msg=document.getElementById('msg');
+const startBtn=document.getElementById('startBtn');
+const countdown=document.getElementById('countdown');
+const infoText=document.getElementById('infoText');
+const camView=document.getElementById('cameraView');
+
 function initAudioContext(){
-  try{
-    if(!audioCtx) audioCtx=new (window.AudioContext||window.webkitAudioContext)();
-    if(audioCtx.state==="suspended") audioCtx.resume();
-  }catch{}
+  if(!audioCtx) audioCtx=new (window.AudioContext||window.webkitAudioContext)();
+  if(audioCtx.state==="suspended") audioCtx.resume();
 }
 function beep(freq=880,dur=150){
   try{
@@ -67,47 +82,30 @@ function beep(freq=880,dur=150){
     osc.start(t);osc.stop(t+dur/1000+0.02);
   }catch{}
 }
-
-const overlay=document.getElementById('overlay');
-const msg=document.getElementById('msg');
-const startBtn=document.getElementById('startBtn');
-const countdown=document.getElementById('countdown');
-const infoText=document.getElementById('infoText');
-
-function showText(t){msg.textContent=t;}
-function showOverlay(){overlay.classList.remove('hidden');}
+function showOverlay(txt,isCenter=true){
+  msg.className=isCenter?'centerText':'stageText';
+  msg.textContent=txt;
+  overlay.classList.remove('hidden');
+}
 function hideOverlay(){overlay.classList.add('hidden');}
 
-/* -------- STEP 0: 첫 터치에서 오디오컨텍스트 활성 -------- */
-window.addEventListener('touchstart',firstTouch,{once:true});
-window.addEventListener('click',firstTouch,{once:true});
-function firstTouch(){
+/* --- 1. 첫 터치 --- */
+window.addEventListener('touchstart', firstTouch,{once:true});
+window.addEventListener('click', firstTouch,{once:true});
+async function firstTouch(){
   initAudioContext();
   infoText.style.display='none';
+  await requestPermissions();
   step1();
 }
 
-/* -------- STEP 1: WELCOME -------- */
-function step1(){
-  showOverlay();
-  showText('WELCOME TO LIMENWALKER WORKSHOP');
-  setTimeout(()=>{
-    beep(880,120);
-    startBtn.style.display='inline-block';
-  },3000);
-}
-
-/* -------- STEP 2: 버튼 클릭 시 권한 요청 & 안내문 -------- */
-startBtn.addEventListener('click',async ()=>{
-  beep(660,150);
-  startBtn.style.display='none';
-  await requestPermissions();
-  step2();
-});
-
+/* --- 권한 요청 + 카메라 시작 --- */
 async function requestPermissions(){
-  try{await navigator.mediaDevices.getUserMedia({video:true,audio:true});}catch{}
-  try{if(navigator.geolocation){navigator.geolocation.getCurrentPosition(()=>{},()=>{});}}catch{}
+  try{
+    cameraStream=await navigator.mediaDevices.getUserMedia({video:true,audio:true});
+    camView.srcObject=cameraStream;
+  }catch(e){console.warn("Camera error",e);}
+  try{if(navigator.geolocation)navigator.geolocation.getCurrentPosition(()=>{},()=>{});}catch{}
   try{
     if(typeof DeviceOrientationEvent!=='undefined'&&typeof DeviceOrientationEvent.requestPermission==='function'){
       await DeviceOrientationEvent.requestPermission();
@@ -120,14 +118,21 @@ async function requestPermissions(){
   }catch{}
 }
 
-/* -------- STEP 3: 안내문 + 카운트다운 -------- */
-function step2(){
-  showText(`안녕하세요. 리멘워커 워크숍의 첫 번째 워크숍 발표를 찾아와주신 여러분에게 감사의 인사를 올립니다.
-이곳은 무작위로 수집된 시간이 이성적으로 분류되어 예측가능한 현실로 구성된 공간입니다.
-이곳에서 이곳에 존재하던 ‘무작위로 수집된 시간’은 예측가능한 현실로부터 탈출하게 됩니다.
-잠시후, 당신의 핸드폰 스크린 위로는 ‘당신이 바라보는 현실 공간’과 ‘이 공간을 탈출한 ‘시간’이 바라보는 공간’이 동시에 투사될 것입니다.
-3분 간의 시간 동안 당신은 공간을 자유롭게 거닐며, 이 공간을 탈출한 ‘시간’이 바라보는 공간’이 함께 포착해 나가시면 됩니다.`);
+/* --- 2. Welcome → Press --- */
+function step1(){
+  showOverlay('WELCOME TO LIMENWALKER WORKSHOP',true);
+  setTimeout(()=>{
+    beep(880,120);
+    msg.textContent='PRESS HERE TO START';
+    startBtn.style.display='inline-block';
+  },3000);
+}
 
+/* --- 3. Start 클릭 → 안내문 + 카운트다운 --- */
+startBtn.addEventListener('click',()=>{
+  beep(660,150);
+  startBtn.style.display='none';
+  showOverlay(formatGuide(),false);
   countdown.style.display='block';
   let sec=60;
   countdown.textContent=`${sec}초 후 탐사가 시작됩니다.`;
@@ -136,10 +141,22 @@ function step2(){
     countdown.textContent=`${sec}초 후 탐사가 시작됩니다.`;
     if(sec<=0){
       clearInterval(timer);
-      showText('WALK : 공간을 탐사하세요.');
+      showOverlay('WALK : 공간을 탐사하세요.',true);
       countdown.style.display='none';
     }
   },1000);
+});
+
+/* --- 안내문 넘버링 출력 --- */
+function formatGuide(){
+  const lines=[
+    "안녕하세요. 리멘워커 워크숍의 첫 번째 워크숍 발표를 찾아와주신 여러분에게 감사의 인사를 올립니다.",
+    "이곳은 무작위로 수집된 시간이 이성적으로 분류되어 예측가능한 현실로 구성된 공간입니다.",
+    "이곳에서 이곳에 존재하던 ‘무작위로 수집된 시간’은 예측가능한 현실로부터 탈출하게 됩니다.",
+    "잠시후, 당신의 핸드폰 스크린 위로는 ‘당신이 바라보는 현실 공간’과 ‘이 공간을 탈출한 ‘시간’이 바라보는 공간’이 동시에 투사될 것입니다.",
+    "3분 간의 시간 동안 당신은 공간을 자유롭게 거닐며, 이 공간을 탈출한 ‘시간’이 바라보는 공간’이 함께 포착해 나가시면 됩니다."
+  ];
+  return lines.map((l,i)=>`${i+1}. ${l}`).join("\n\n");
 }
 })();
 </script>
