@@ -4,76 +4,43 @@
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <title>LIMENWALKER WORKSHOP</title>
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <style>
-  :root{
-    --vwpx:100vw;--vhpx:100vh;
-    --gap:32px;--line-color:rgba(255,255,255,.9);
-    --line-w:1px;--line-r:2px;
-    --ff-ui:"Courier New",Courier,monospace;
-  }
   html,body{
     margin:0;height:100%;background:#000;color:#fff;
-    font-family:var(--ff-ui);
-    -webkit-touch-callout:none;-webkit-tap-highlight-color:transparent;
-    overflow:hidden;
+    font-family:"Courier New",Courier,monospace;
+    overflow:hidden;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent;
   }
   *,*::before,*::after{box-sizing:border-box;}
-  #view{
-    position:fixed;inset:0;width:var(--vwpx);height:var(--vhpx);
-    background:#000;z-index:0;pointer-events:none;
-  }
   .proscenium{
-    position:fixed;
-    left:calc(var(--gap)+env(safe-area-inset-left));
-    right:calc(var(--gap)+env(safe-area-inset-right));
-    top:calc(var(--gap)+env(safe-area-inset-top));
-    bottom:calc(var(--gap)+env(safe-area-inset-bottom));
-    border:var(--line-w) solid var(--line-color);
-    border-radius:var(--line-r);
-    pointer-events:none;z-index:5;
+    position:fixed;inset:2%;border:1px solid rgba(255,255,255,.9);
+    border-radius:2px;pointer-events:none;z-index:5;
   }
-  /* 중앙 정렬 오버레이 */
   #overlay{
-    position:fixed;inset:0;
-    display:flex;flex-direction:column;
+    position:fixed;inset:0;display:flex;flex-direction:column;
     align-items:center;justify-content:center;
-    background:rgba(0,0,0,.8);
-    z-index:100;transition:opacity .5s ease;
-    text-align:center;line-height:1.6;
+    background:rgba(0,0,0,.85);z-index:10;text-align:center;
+    line-height:1.6;transition:opacity .4s ease;
   }
   #overlay.hidden{opacity:0;pointer-events:none;}
-  .stageText{
-    font-size:clamp(16px,2.6vmin,24px);
-    white-space:pre-line;
-  }
+  .stageText{font-size:clamp(16px,2.6vmin,24px);white-space:pre-line;}
   .stageBtn{
     margin-top:20px;border:1px solid #fff;background:transparent;color:#fff;
     padding:.6em 1.4em;text-transform:uppercase;
     font-size:clamp(14px,2vmin,20px);cursor:pointer;
   }
   #infoText{
-    position:fixed;inset:0;
-    display:flex;align-items:center;justify-content:center;
+    position:fixed;inset:0;display:flex;align-items:center;justify-content:center;
     text-align:center;font-size:clamp(14px,2vmin,18px);
-    opacity:.8;z-index:50;line-height:1.5;
+    opacity:.8;z-index:2;line-height:1.5;
   }
-  #countdown{
-    font-size:clamp(12px,1.8vmin,16px);
-    opacity:.8;margin-top:14px;
-  }
+  #countdown{font-size:clamp(12px,1.8vmin,16px);opacity:.8;margin-top:14px;}
 </style>
 </head>
 <body>
-<canvas id="view"></canvas>
 <div class="proscenium"></div>
-
-<!-- 중앙 배치 안내문 (검정박스 X) -->
 <div id="infoText">프로그램 시작을 위해 화면을 터치한 후<br>카메라, 마이크, 위치 센서 허용을 눌러주세요.</div>
 
-<!-- 검정박스 -->
-<div id="overlay">
+<div id="overlay" class="hidden">
   <div id="msg" class="stageText"></div>
   <button id="startBtn" class="stageBtn" style="display:none;">PRESS HERE TO START</button>
   <div id="countdown" style="display:none;"></div>
@@ -82,15 +49,23 @@
 <script>
 (()=>{
 let audioCtx;
+function initAudioContext(){
+  try{
+    if(!audioCtx) audioCtx=new (window.AudioContext||window.webkitAudioContext)();
+    if(audioCtx.state==="suspended") audioCtx.resume();
+  }catch{}
+}
 function beep(freq=880,dur=150){
-  if(!audioCtx) audioCtx=new (window.AudioContext||window.webkitAudioContext)();
-  const osc=audioCtx.createOscillator(),g=audioCtx.createGain();
-  osc.type='square';osc.frequency.value=freq;g.gain.value=0.0001;
-  osc.connect(g).connect(audioCtx.destination);
-  const t=audioCtx.currentTime;
-  g.gain.exponentialRampToValueAtTime(0.25,t+0.02);
-  g.gain.exponentialRampToValueAtTime(0.0001,t+dur/1000);
-  osc.start(t);osc.stop(t+dur/1000+0.02);
+  try{
+    initAudioContext();
+    const osc=audioCtx.createOscillator(),g=audioCtx.createGain();
+    osc.type='square';osc.frequency.value=freq;g.gain.value=0.0001;
+    osc.connect(g).connect(audioCtx.destination);
+    const t=audioCtx.currentTime;
+    g.gain.exponentialRampToValueAtTime(0.25,t+0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001,t+dur/1000);
+    osc.start(t);osc.stop(t+dur/1000+0.02);
+  }catch{}
 }
 
 const overlay=document.getElementById('overlay');
@@ -102,6 +77,33 @@ const infoText=document.getElementById('infoText');
 function showText(t){msg.textContent=t;}
 function showOverlay(){overlay.classList.remove('hidden');}
 function hideOverlay(){overlay.classList.add('hidden');}
+
+/* -------- STEP 0: 첫 터치에서 오디오컨텍스트 활성 -------- */
+window.addEventListener('touchstart',firstTouch,{once:true});
+window.addEventListener('click',firstTouch,{once:true});
+function firstTouch(){
+  initAudioContext();
+  infoText.style.display='none';
+  step1();
+}
+
+/* -------- STEP 1: WELCOME -------- */
+function step1(){
+  showOverlay();
+  showText('WELCOME TO LIMENWALKER WORKSHOP');
+  setTimeout(()=>{
+    beep(880,120);
+    startBtn.style.display='inline-block';
+  },3000);
+}
+
+/* -------- STEP 2: 버튼 클릭 시 권한 요청 & 안내문 -------- */
+startBtn.addEventListener('click',async ()=>{
+  beep(660,150);
+  startBtn.style.display='none';
+  await requestPermissions();
+  step2();
+});
 
 async function requestPermissions(){
   try{await navigator.mediaDevices.getUserMedia({video:true,audio:true});}catch{}
@@ -118,28 +120,8 @@ async function requestPermissions(){
   }catch{}
 }
 
-/* 터치 이벤트 window 전체로 확장 */
-window.addEventListener('touchstart', startSequence,{once:true,passive:true});
-window.addEventListener('click', startSequence,{once:true});
-
-async function startSequence(){
-  infoText.style.display='none';
-  await requestPermissions();
-  step1();
-}
-
-function step1(){
-  showText('WELCOME TO LIMENWALKER WORKSHOP');
-  showOverlay();
-  setTimeout(()=>{
-    beep(880,120);
-    startBtn.style.display='inline-block';
-  },3000);
-}
-
-startBtn.addEventListener('click', ()=>{
-  beep(660,150);
-  startBtn.style.display='none';
+/* -------- STEP 3: 안내문 + 카운트다운 -------- */
+function step2(){
   showText(`안녕하세요. 리멘워커 워크숍의 첫 번째 워크숍 발표를 찾아와주신 여러분에게 감사의 인사를 올립니다.
 이곳은 무작위로 수집된 시간이 이성적으로 분류되어 예측가능한 현실로 구성된 공간입니다.
 이곳에서 이곳에 존재하던 ‘무작위로 수집된 시간’은 예측가능한 현실로부터 탈출하게 됩니다.
@@ -150,7 +132,8 @@ startBtn.addEventListener('click', ()=>{
   let sec=60;
   countdown.textContent=`${sec}초 후 탐사가 시작됩니다.`;
   const timer=setInterval(()=>{
-    sec--;countdown.textContent=`${sec}초 후 탐사가 시작됩니다.`;
+    sec--;
+    countdown.textContent=`${sec}초 후 탐사가 시작됩니다.`;
     if(sec<=0){
       clearInterval(timer);
       showText('WALK : 공간을 탐사하세요.');
@@ -158,7 +141,6 @@ startBtn.addEventListener('click', ()=>{
     }
   },1000);
 }
-
 })();
 </script>
 </body>
