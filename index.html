@@ -180,6 +180,21 @@ function beep(freq=880, dur=150){
   }catch{}
 }
 
+/* ===== Wake Lock (화면 꺼짐 방지) ===== */
+let wakeLock = null;
+async function keepScreenOn(){
+  try{
+    if('wakeLock' in navigator){
+      wakeLock = await navigator.wakeLock.request('screen');
+      document.addEventListener('visibilitychange', async ()=>{
+        if(document.visibilityState==='visible' && !wakeLock){
+          try{ wakeLock = await navigator.wakeLock.request('screen'); }catch{}
+        }
+      });
+    }
+  }catch{}
+}
+
 /* ===== Overlay helpers ===== */
 function showOverlayText(text, center=true){
   msg.className = center ? 'centerText' : 'stageText';
@@ -210,8 +225,7 @@ setInterval(()=>{ if(ninja.style.opacity !== '0'){ ninja.src = ninjaUrl(); } }, 
 function showNinja(on=true){
   if(on){
     if(!ninja.contentWindow) ninja.src = ninjaUrl();
-    // 트랜지션 보장
-    ninja.style.opacity = '0'; void ninja.offsetHeight;
+    ninja.style.opacity = '0'; void ninja.offsetHeight; // 트랜지션 보장
     ninja.style.opacity = String(CONFIG.BLEND);
   }else{
     ninja.style.opacity = '0';
@@ -231,7 +245,7 @@ const MAX_AGE     = 60_000; // 60초 후 완전 소멸
 const MAX_JITTER  = 18;     // px (나이 기반 지터 상한)
 
 /* 점선 더 얇게/촘촘하게 */
-const BASE_DASH   = [2, 6]; // ← 기존 [6,8]에서 축소
+const BASE_DASH   = [2, 8]; // [2,6]도 가능
 
 // 가속도(중력 포함) 크기 → 지터 보정 참고용
 let motionMag = 0;
@@ -306,8 +320,8 @@ function drawTrajectory(){
   if(points.length < 2 || !drawingEnabled) return;
 
   tctx.save();
-  tctx.lineWidth = 1;             // ← 더 얇게
-  tctx.setLineDash(BASE_DASH);    // ← 더 촘촘
+  tctx.lineWidth = 0.8;          // 더 얇게
+  tctx.setLineDash(BASE_DASH);   // 촘촘/가늘게 보이도록
   for(let i=1;i<points.length;i++){
     const a = points[i-1], b = points[i];
     const age = now - b.t;
@@ -348,56 +362,57 @@ function loop(){
   rafId = requestAnimationFrame(loop);
 }
 
-/* ===== 카메라/권한 ===== */
+/* ===== 카메라/마이크 분리 + 워치독 ===== */
 let currentStream = null;
+let ensureTimer = null;
+let restartTimer = null;
 
-async function requestPermissions(){
-  // 카메라/마이크
-  try{
-    const stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: { ideal: "environment" } }, // 후면 우선
-      audio: true
-    });
-    currentStream = stream;                 // 참조 유지
-    camView.srcObject = stream;
-    camView.muted = true;
-    camView.setAttribute('playsinline','');
-    try { await camView.play(); } catch {}
-    // (디버깅) 트랙 상태 로깅
-    currentStream.getVideoTracks().forEach(tr=>{
-      tr.onended  = ()=>console.warn('Video track ended');
-      tr.onmute   = ()=>console.warn('Video track muted');
-      tr.onunmute = ()=>console.warn('Video track unmuted');
-    });
-  }catch(e){
-    console.warn("Camera error, fallback to any:",e);
-    try{
-      const stream = await navigator.mediaDevices.getUserMedia({ video:true, audio:true });
-      currentStream = stream;
-      camView.srcObject = stream;
-      camView.muted = true;
-      camView.setAttribute('playsinline','');
-      try { await camView.play(); } catch {}
-    }catch(err){
-      console.error('Camera failed:', err);
-      infoText.style.display='flex';
-      infoText.innerHTML = '카메라 접근이 거부되었어요.<br>설정에서 카메라/마이크 권한을 허용해 주세요.';
-      return;
+async function startCamera(){
+  const stream = await navigator.mediaDevices.getUserMedia({
+    video: { facingMode: { ideal: "environment" } }, // 후면 우선
+    audio: false
+  });
+  currentStream = stream;                 // 참조 유지
+  camView.srcObject = stream;
+  camView.muted = true;
+  camView.setAttribute('playsinline','');
+  camView.load();
+  try { await camView.play(); } catch {}
+  bindTrackGuards(stream);
+  pingEnsurePlaying();
+}
+
+async function startMic(){
+  try { await navigator.mediaDevices.getUserMedia({ audio:true }); } catch {}
+}
+
+function bindTrackGuards(stream){
+  stream.getVideoTracks().forEach(tr=>{
+    tr.onended  = ()=>{ console.warn('Video ended'); restartCameraSoon(); };
+    tr.onmute   = ()=>{ console.warn('Video muted'); pingEnsurePlaying(); };
+    tr.onunmute = ()=>{ console.warn('Video unmuted'); pingEnsurePlaying(); };
+  });
+}
+
+function restartCameraSoon(ms=350){
+  if(restartTimer) return;
+  restartTimer = setTimeout(async ()=>{
+    restartTimer=null;
+    try{ if(currentStream) currentStream.getTracks().forEach(t=>t.stop()); }catch{}
+    currentStream=null;
+    try{ await startCamera(); }catch(e){ console.error('restart camera fail',e); }
+  }, ms);
+}
+
+function pingEnsurePlaying(){
+  if(ensureTimer) return;
+  ensureTimer = setInterval(()=>{
+    if(camView.readyState >= 2 && camView.paused){
+      camView.play().catch(()=>{});
     }
-  }
-  // 위치
-  try{ if(navigator.geolocation) navigator.geolocation.getCurrentPosition(()=>{},()=>{}); }catch{}
-  // 센서(iOS는 제스처 필요)
-  try{
-    if(typeof DeviceOrientationEvent!=='undefined' && typeof DeviceOrientationEvent.requestPermission==='function'){
-      await DeviceOrientationEvent.requestPermission();
-    }
-  }catch{}
-  try{
-    if(typeof DeviceMotionEvent!=='undefined' && typeof DeviceMotionEvent.requestPermission==='function'){
-      await DeviceMotionEvent.requestPermission();
-    }
-  }catch{}
+    const ok = currentStream && currentStream.getVideoTracks().some(t=>t.readyState==='live');
+    if(!ok) restartCameraSoon(100);
+  }, 1000);
 }
 
 /* ===== Input binder (더블 트리거 방지) ===== */
@@ -409,20 +424,17 @@ function onPress(el, handler){
 }
 
 /* ===== Flow ===== */
-/* 1) 첫 터치: 오디오 init + 권한 + 센서(수집 시작) + Ninja on → WELCOME */
+/* 1) 첫 터치: 오디오 init + 화면유지 + 카메라(on) + 센서 수집 + 레졸룸 → WELCOME */
 onPress(window, async ()=>{
   initAudioContext();
+  keepScreenOn();
   infoText.style.display='none';
-  await requestPermissions();
 
-  // 센서 수집 시작(시각화 표시는 아직 off)
-  enableMotionIfNeeded();
-  startGPS();
-  if(!rafId) loop();
+  try{ await startCamera(); }catch(e){ console.error('camera start fail',e); }
+  enableMotionIfNeeded(); startGPS(); if(!rafId) loop();
 
-  // 레졸룸: 합성 충돌 방지 위해 살짝 지연 표시
   applyRezScale();
-  setTimeout(()=> showNinja(true), 200);
+  setTimeout(()=> showNinja(true), 200); // 합성 충돌 방지 위해 약간 지연
 
   stepWelcome();
 });
@@ -438,14 +450,16 @@ function stepWelcome(){
   },3000);
 }
 
-/* 3) PRESS → 안내문 + 타이머(여기서만 표시) */
+/* 3) PRESS → 안내문 + 타이머(여기서만 표시) + 마이크 허용(필요시) */
 let guideTimer = null;
-onPress(startBtn, ()=>{
+onPress(startBtn, async ()=>{
   if(guideTimer) return;   // 재진입 방지
   beep(660,150);
   startBtn.style.display='none';
+  // 마이크는 여기서 별도로 요청(안정성↑)
+  await startMic().catch(()=>{});
   showOverlayText(formatGuide(), false);
-  // 타이머 ON (안내문에서만)
+
   let sec = 60;
   countdown.style.display='block';
   countdown.textContent = `${sec}초 후 탐사가 시작됩니다.`;
@@ -489,6 +503,7 @@ document.addEventListener('visibilitychange', ()=>{
     applyRezScale();
     showNinja(true);
     camView.play().catch(()=>{});   // 🔁 재생 재요청
+    if(!currentStream){ restartCameraSoon(50); }
     if(audioCtx && audioCtx.state==='suspended'){ audioCtx.resume().catch(()=>{}); }
   }
 });
@@ -496,6 +511,7 @@ window.addEventListener('orientationchange', ()=>{
   setTimeout(()=>{
     setViewportVars();
     camView.play().catch(()=>{});   // 🔁 회전 뒤 재요청
+    if(!currentStream){ restartCameraSoon(50); }
   },120);
 });
 
