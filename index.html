@@ -4,52 +4,103 @@
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <title>LIMENWALKER WORKSHOP</title>
+
+<!-- A2HS 전체화면 & 테마 -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#000000">
+<link rel="manifest" href="manifest.json"><!-- (선택) 있으면 standalone 적용 -->
+
 <style>
+  :root{
+    --vwpx:100vw; --vhpx:100vh; /* JS에서 실치수로 덮어씀 */
+    --gap:32px; --line-color:rgba(255,255,255,.9);
+    --line-w:1px; --line-r:2px;
+    --ff:"Courier New", Courier, monospace;
+  }
   html,body{
     margin:0;height:100%;background:#000;color:#fff;
-    font-family:"Courier New",Courier,monospace;
-    overflow:hidden;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent;
+    font-family:var(--ff); overflow:hidden;
+    -webkit-touch-callout:none; -webkit-tap-highlight-color:transparent;
   }
-  *,*::before,*::after{box-sizing:border-box;}
-  video#cameraView{
-    position:fixed;inset:0;width:100%;height:100%;object-fit:cover;
+  *,*::before,*::after{ box-sizing:border-box; }
+
+  /* 카메라 뷰 */
+  #cameraView{
+    position:fixed; left:0; top:0; width:var(--vwpx); height:var(--vhpx);
+    object-fit:cover; background:#000; z-index:0;
     filter:grayscale(1) contrast(1.2);
-    z-index:0;background:#000;
   }
+
+  /* VDO.Ninja 오버레이 (레졸룸) */
+  #ninjaOverlay{
+    position:fixed; left:50%; top:50%;
+    width:var(--vwpx); height:var(--vhpx);
+    transform:translate(-50%,-50%) scale(1); transform-origin:50% 50%;
+    border:0; background:transparent; image-rendering:auto;
+    z-index:4; pointer-events:none; opacity:0; transition:opacity .35s ease;
+  }
+
+  /* 프로시니엄 */
   .proscenium{
-    position:fixed;inset:2%;border:1px solid rgba(255,255,255,.9);
-    border-radius:2px;pointer-events:none;z-index:5;
+    position:fixed;
+    left:calc(var(--gap) + env(safe-area-inset-left));
+    right:calc(var(--gap) + env(safe-area-inset-right));
+    top:calc(var(--gap) + env(safe-area-inset-top));
+    bottom:calc(var(--gap) + env(safe-area-inset-bottom));
+    border:var(--line-w) solid var(--line-color);
+    border-radius:var(--line-r);
+    pointer-events:none; z-index:5;
   }
+
+  /* 중앙 검정박스 */
   #overlay{
-    position:fixed;inset:0;
-    display:flex;flex-direction:column;align-items:center;justify-content:center;
-    background:rgba(0,0,0,.8);z-index:10;
-    text-align:center;line-height:1.6;transition:opacity .35s ease;
+    position:fixed; left:0; top:0; width:var(--vwpx); height:var(--vhpx);
+    display:flex; align-items:center; justify-content:center; flex-direction:column;
+    background:rgba(0,0,0,.80); z-index:10; text-align:center; line-height:1.6;
+    transition:opacity .35s ease;
   }
-  #overlay.hidden{opacity:0;pointer-events:none;}
-  .stageText{font-size:clamp(14px,2vmin,20px);white-space:pre-line;max-width:90vw;text-align:left;}
-  .centerText{text-align:center;white-space:pre-line;font-size:clamp(16px,2.6vmin,24px);}
+  #overlay.hidden{ opacity:0; pointer-events:none; }
+  .centerText{ text-align:center; white-space:pre-line; font-size:clamp(16px,2.6vmin,24px); }
+  .stageText{ text-align:left; white-space:pre-line; max-width:90vw; font-size:clamp(14px,2vmin,20px); }
   .stageBtn{
-    border:1px solid #fff;background:transparent;color:#fff;
-    padding:.6em 1.4em;text-transform:uppercase;font-size:clamp(14px,2vmin,20px);
-    cursor:pointer;
+    border:1px solid #fff; background:transparent; color:#fff;
+    padding:.6em 1.4em; text-transform:uppercase; margin-top:18px;
+    font-size:clamp(14px,2vmin,20px); cursor:pointer;
   }
+
+  /* 상단 안내(검정박스 아님 → 중앙 전체 화면으로 안내) */
   #infoText{
-    position:fixed;inset:0;display:flex;align-items:center;justify-content:center;
-    text-align:center;font-size:clamp(14px,2vmin,18px);opacity:.8;z-index:20;
+    position:fixed; left:0; top:0; width:var(--vwpx); height:var(--vhpx);
+    display:flex; align-items:center; justify-content:center; text-align:center;
+    font-size:clamp(14px,2vmin,18px); opacity:.88; z-index:8; pointer-events:auto;
   }
-  #countdown{font-size:clamp(12px,1.8vmin,16px);opacity:.8;margin-top:14px;text-align:center;display:none;}
+
+  #countdown{
+    font-size:clamp(12px,1.8vmin,16px); opacity:.8; margin-top:14px; text-align:center; display:none;
+  }
 </style>
 </head>
 <body>
-<video id="cameraView" autoplay muted playsinline></video>
-<div class="proscenium"></div>
 
+<!-- 실시간 카메라(후면) -->
+<video id="cameraView" autoplay muted playsinline></video>
+
+<!-- VDO.Ninja(레졸룸) -->
+<iframe id="ninjaOverlay"
+  allow="autoplay; camera; microphone; fullscreen; clipboard-read; clipboard-write"
+  allowtransparency="true" referrerpolicy="no-referrer" src="about:blank">
+</iframe>
+
+<div class="proscenium" aria-hidden="true"></div>
+
+<!-- (검정박스 아님) 처음 안내 -->
 <div id="infoText">
   프로그램 시작을 위해 화면을 터치한 후<br>
   카메라, 마이크, 위치 센서 허용을 눌러주세요.
 </div>
 
+<!-- 검정박스 -->
 <div id="overlay" class="hidden">
   <div id="msg" class="centerText"></div>
   <button id="startBtn" class="stageBtn" style="display:none;">PRESS HERE TO START</button>
@@ -57,65 +108,108 @@
 </div>
 
 <script>
-(()=>{
+(()=> {
+/* ===== Config ===== */
+const CONFIG = { ROOM_ID: "YOURROOMID", BLEND: 0.5, REZ_SCALE: 0.65 };
+
+/* ===== Elements ===== */
+const camView = document.getElementById('cameraView');
+const ninja = document.getElementById('ninjaOverlay');
+const overlay = document.getElementById('overlay');
+const msg = document.getElementById('msg');
+const startBtn = document.getElementById('startBtn');
+const infoText = document.getElementById('infoText');
+const countdown = document.getElementById('countdown');
+
+/* ===== Viewport fix for A2HS ===== */
+function setViewportVars(){
+  const vv = window.visualViewport;
+  const w = Math.round((vv?.width || window.innerWidth));
+  const h = Math.round((vv?.height || window.innerHeight));
+  document.documentElement.style.setProperty('--vwpx', w + 'px');
+  document.documentElement.style.setProperty('--vhpx', h + 'px');
+}
+setViewportVars();
+window.addEventListener('resize', setViewportVars);
+if (window.visualViewport){
+  visualViewport.addEventListener('resize', setViewportVars);
+  visualViewport.addEventListener('scroll', setViewportVars);
+}
+
 /* ===== Audio ===== */
 let audioCtx;
 function initAudioContext(){
-  if(!audioCtx) audioCtx=new (window.AudioContext||window.webkitAudioContext)();
-  if(audioCtx.state==="suspended") audioCtx.resume();
+  if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if(audioCtx.state === 'suspended') audioCtx.resume().catch(()=>{});
 }
-function beep(freq=880,dur=150){
+function beep(freq=880, dur=150){
   try{
     initAudioContext();
-    const osc=audioCtx.createOscillator(),g=audioCtx.createGain();
-    osc.type='square';osc.frequency.value=freq;g.gain.value=0.0001;
+    const osc = audioCtx.createOscillator(), g = audioCtx.createGain();
+    osc.type='square'; osc.frequency.value=freq; g.gain.value=0.0001;
     osc.connect(g).connect(audioCtx.destination);
-    const t=audioCtx.currentTime;
+    const t = audioCtx.currentTime;
     g.gain.exponentialRampToValueAtTime(0.25,t+0.02);
     g.gain.exponentialRampToValueAtTime(0.0001,t+dur/1000);
-    osc.start(t);osc.stop(t+dur/1000+0.02);
+    osc.start(t); osc.stop(t+dur/1000+0.02);
   }catch{}
 }
 
-/* ===== Elements ===== */
-const overlay=document.getElementById('overlay');
-const msg=document.getElementById('msg');
-const startBtn=document.getElementById('startBtn');
-const countdown=document.getElementById('countdown');
-const infoText=document.getElementById('infoText');
-const camView=document.getElementById('cameraView');
-
 /* ===== Helpers ===== */
-function showOverlay(txt,isCenter=true){
-  msg.className=isCenter?'centerText':'stageText';
-  msg.textContent=txt;
+function showOverlayText(text, center=true){
+  msg.className = center ? 'centerText' : 'stageText';
+  msg.textContent = text;
   overlay.classList.remove('hidden');
 }
 function hideOverlay(){ overlay.classList.add('hidden'); }
-function onPress(el, handler){
-  let fired=false;
-  const wrap=(e)=>{ if(fired) return; fired=true; e.preventDefault(); e.stopPropagation(); handler(); };
-  el.addEventListener('touchend', wrap, {once:true, passive:false});
-  el.addEventListener('click', wrap, {once:true});
+
+/* ===== VDO.Ninja (레졸룸) ===== */
+const injectedCss = encodeURIComponent(`
+  html,body{background:transparent!important;margin:0!important;overflow:hidden!important;}
+  #container,.container{background:transparent!important;}
+  video,canvas{position:fixed!important; inset:0!important; width:100vw!important; height:100vh!important; object-fit:cover!important; background:transparent!important;}
+`);
+const ninjaBase = `https://vdo.ninja/?view=${encodeURIComponent(CONFIG.ROOM_ID)}&clean&autostart&noaudio&codec=vp8&solo&transparent=1&css=${injectedCss}`;
+const ninjaUrl  = () => `${ninjaBase}&ts=${Date.now()}`;
+
+function applyRezScale(){
+  const s = Math.max(0.2, Math.min(1, Number(CONFIG.REZ_SCALE)||1));
+  ninja.style.width = `calc(var(--vwpx) * ${s})`;
+  ninja.style.height = `calc(var(--vhpx) * ${s})`;
+  ninja.style.left = '50%'; ninja.style.top = '50%';
+  ninja.style.transform = `translate(-50%,-50%) scale(${1/s})`;
+}
+applyRezScale();
+setInterval(()=>{ if(ninja.style.opacity !== '0'){ ninja.src = ninjaUrl(); } }, 60000);
+
+function showNinja(on=true){
+  if(on){
+    if(!ninja.contentWindow) ninja.src = ninjaUrl();
+    ninja.style.opacity = String(CONFIG.BLEND);
+  }else{
+    ninja.style.opacity = '0';
+  }
 }
 
-/* ===== Permissions + Camera ===== */
+/* ===== Permissions (후면 카메라) ===== */
 async function requestPermissions(){
-  // 후면 카메라 우선
+  // 카메라/마이크
   try{
-    const stream=await navigator.mediaDevices.getUserMedia({
-      video:{ facingMode:{ ideal:"environment" } },
-      audio:true
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: "environment" } }, // 후면 우선
+      audio: true
     });
-    camView.srcObject=stream;
+    camView.srcObject = stream;
   }catch(e){
-    // 아무 카메라라도 폴백
+    // 폴백
     try{
-      const stream=await navigator.mediaDevices.getUserMedia({video:true,audio:true});
-      camView.srcObject=stream;
-    }catch(err){ console.error("Camera failed:", err); }
+      const stream = await navigator.mediaDevices.getUserMedia({ video:true, audio:true });
+      camView.srcObject = stream;
+    }catch(err){ console.error('Camera failed:', err); }
   }
+  // 위치
   try{ if(navigator.geolocation) navigator.geolocation.getCurrentPosition(()=>{},()=>{}); }catch{}
+  // 센서(iOS는 제스처 필요)
   try{
     if(typeof DeviceOrientationEvent!=='undefined' && typeof DeviceOrientationEvent.requestPermission==='function'){
       await DeviceOrientationEvent.requestPermission();
@@ -128,59 +222,70 @@ async function requestPermissions(){
   }catch{}
 }
 
+/* ===== Input binder (더블 트리거 방지) ===== */
+function onPress(el, handler){
+  let fired = false;
+  const wrap = (e)=>{ if(fired) return; fired=true; e.preventDefault(); e.stopPropagation(); handler(); };
+  el.addEventListener('touchend', wrap, { once:true, passive:false });
+  el.addEventListener('click', wrap, { once:true });
+}
+
 /* ===== Flow ===== */
-// 1) 첫 터치: 오디오 활성 + 권한 요청 → WELCOME
+/* 1) 첫 터치: 오디오 init + 권한 요청 + Ninja on → WELCOME */
 onPress(window, async ()=>{
   initAudioContext();
   infoText.style.display='none';
-  countdown.style.display='none'; // <-- 안내문에서만 보이도록 초기 비가시화
   await requestPermissions();
+
+  // 첫 제스처 직후 레졸룸 시작 (iOS A2HS에서 자동재생 보장)
+  applyRezScale(); showNinja(true);
+
   stepWelcome();
 });
 
-// 2) WELCOME → (3초 후 비프) → PRESS 버튼 '화면 교체'
+/* 2) WELCOME → (3초 후 비프) → PRESS 버튼(문구 없이 버튼만) */
 function stepWelcome(){
-  showOverlay('WELCOME TO LIMENWALKER WORKSHOP', true);
+  showOverlayText('WELCOME TO LIMENWALKER WORKSHOP', true);
   setTimeout(()=>{
     beep(880,120);
-    msg.textContent='';                // 문구 제거
-    countdown.style.display='none';    // 타이머는 안내문에서만
-    startBtn.style.display='inline-block'; // 버튼만 표시
+    msg.textContent='';                 // 문구 제거
+    countdown.style.display='none';     // 타이머는 안내문에서만
+    startBtn.style.display='inline-block';
   },3000);
 }
 
-// 3) PRESS 버튼 → 안내문 + 60초 타이머 (여기서만 표시)
+/* 3) PRESS → 안내문 + 타이머(여기서만 표시) */
 onPress(startBtn, ()=>{
   beep(660,150);
   startBtn.style.display='none';
-  showOverlay(formatGuide(), false);   // 안내문
-  // 타이머 on
-  let sec=60;
+  showOverlayText(formatGuide(), false);
+  // 타이머 ON (안내문에서만)
+  let sec = 60;
   countdown.style.display='block';
-  countdown.textContent=`${sec}초 후 탐사가 시작됩니다.`;
-  const timer=setInterval(()=>{
+  countdown.textContent = `${sec}초 후 탐사가 시작됩니다.`;
+  const timer = setInterval(()=>{
     sec--;
-    countdown.textContent=`${sec}초 후 탐사가 시작됩니다.`;
+    countdown.textContent = `${sec}초 후 탐사가 시작됩니다.`;
     if(sec<=0){
       clearInterval(timer);
       countdown.style.display='none';
-      stepWalk();
+      stepWalkStop();
     }
-  },1000);
+  }, 1000);
 });
 
-// 4) WALK → 3초 뒤 STOP → 3초 뒤 모두 사라짐
-function stepWalk(){
-  showOverlay('WALK : 공간을 걸어보세요.', true);
+/* 4) WALK → 3초 후 STOP → 3초 후 숨김 */
+function stepWalkStop(){
+  showOverlayText('WALK : 공간을 걸어보세요.', true);
   setTimeout(()=>{
-    showOverlay('STOP : 공간에 멈춰 주변을 살피세요.', true);
+    showOverlayText('STOP : 공간에 멈춰 주변을 살피세요.', true);
     setTimeout(()=>{ hideOverlay(); }, 3000);
   }, 3000);
 }
 
 /* 안내문(넘버링) */
 function formatGuide(){
-  const lines=[
+  const lines = [
     "안녕하세요. 리멘워커 워크숍의 첫 번째 워크숍 발표를 찾아와주신 여러분에게 감사의 인사를 올립니다.",
     "이곳은 무작위로 수집된 시간이 이성적으로 분류되어 예측가능한 현실로 구성된 공간입니다.",
     "어느 날, 이곳에 존재하던 ‘무작위로 수집된 시간’은 예측가능한 현실로부터 탈출하게 됩니다.",
@@ -189,6 +294,16 @@ function formatGuide(){
   ];
   return lines.map((l,i)=>`${i+1}. ${l}`).join("\n\n");
 }
+
+/* iOS A2HS 복귀 시 레이아웃/오디오 재개 */
+document.addEventListener('visibilitychange', ()=>{
+  if(document.visibilityState==='visible'){
+    setViewportVars();
+    if(audioCtx && audioCtx.state==='suspended'){ audioCtx.resume().catch(()=>{}); }
+    applyRezScale();
+  }
+});
+
 })();
 </script>
 </body>
