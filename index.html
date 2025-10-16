@@ -49,6 +49,7 @@
     transform:translate(-50%,-50%) scale(1); transform-origin:50% 50%;
     border:0; background:transparent; image-rendering:auto;
     z-index:4; pointer-events:none; opacity:0; transition:opacity .35s ease;
+    mix-blend-mode: lighten; /* 카메라를 덜 덮도록 */
   }
 
   /* 프로시니엄 */
@@ -67,7 +68,7 @@
   #overlay{
     position:fixed; left:0; top:0; width:var(--vwpx); height:var(--vhpx);
     display:flex; align-items:center; justify-content:center; flex-direction:column;
-    background:rgba(0,0,0,.65); /* 살짝 낮춰 시야 확보 */
+    background:rgba(0,0,0,.65); /* 시야 확보 */
     z-index:10; text-align:center; line-height:1.6;
     transition:opacity .35s ease;
   }
@@ -124,7 +125,13 @@
 <script>
 (()=> {
 /* ===== Config ===== */
-const CONFIG = { ROOM_ID: "YOURROOMID", BLEND: 0.5, REZ_SCALE: 0.65 };
+const CONFIG = {
+  ROOM_ID: "YOURROOMID",
+  REZ_SCALE: 0.65,
+  BLEND_WELCOME: 0.0,  // WELCOME/안내문: 숨김
+  BLEND_WALK:   0.18,  // WALK: 살짝 표시
+  BLEND_STOP:   0.15   // STOP: 더 낮게
+};
 
 /* ===== Elements ===== */
 const camView   = document.getElementById('cameraView');
@@ -222,14 +229,9 @@ function applyRezScale(){
 applyRezScale();
 setInterval(()=>{ if(ninja.style.opacity !== '0'){ ninja.src = ninjaUrl(); } }, 60000);
 
-function showNinja(on=true){
-  if(on){
-    if(!ninja.contentWindow) ninja.src = ninjaUrl();
-    ninja.style.opacity = '0'; void ninja.offsetHeight; // 트랜지션 보장
-    ninja.style.opacity = String(CONFIG.BLEND);
-  }else{
-    ninja.style.opacity = '0';
-  }
+function setNinjaBlend(alpha=0){
+  ninja.style.opacity = '0'; void ninja.offsetHeight; // 트랜지션 보장
+  ninja.style.opacity = String(alpha);
 }
 
 /* ===== Sensors & Trajectory ===== */
@@ -243,9 +245,7 @@ const MAX_POINTS = 2500;
 const DECAY_START = 10_000; // 10초 후부터 해체 시작
 const MAX_AGE     = 60_000; // 60초 후 완전 소멸
 const MAX_JITTER  = 18;     // px (나이 기반 지터 상한)
-
-/* 점선 더 얇게/촘촘하게 */
-const BASE_DASH   = [2, 8]; // [2,6]도 가능
+const BASE_DASH   = [2, 8]; // 얇고 촘촘한 점선
 
 // 가속도(중력 포함) 크기 → 지터 보정 참고용
 let motionMag = 0;
@@ -321,7 +321,7 @@ function drawTrajectory(){
 
   tctx.save();
   tctx.lineWidth = 0.8;          // 더 얇게
-  tctx.setLineDash(BASE_DASH);   // 촘촘/가늘게 보이도록
+  tctx.setLineDash(BASE_DASH);   // 촘촘
   for(let i=1;i<points.length;i++){
     const a = points[i-1], b = points[i];
     const age = now - b.t;
@@ -424,7 +424,7 @@ function onPress(el, handler){
 }
 
 /* ===== Flow ===== */
-/* 1) 첫 터치: 오디오 init + 화면유지 + 카메라(on) + 센서 수집 + 레졸룸 → WELCOME */
+/* 1) 첫 터치: 오디오 init + 화면유지 + 카메라(on) + 센서 수집 + 레졸룸 src 로드(숨김) → WELCOME */
 onPress(window, async ()=>{
   initAudioContext();
   keepScreenOn();
@@ -434,7 +434,8 @@ onPress(window, async ()=>{
   enableMotionIfNeeded(); startGPS(); if(!rafId) loop();
 
   applyRezScale();
-  setTimeout(()=> showNinja(true), 200); // 합성 충돌 방지 위해 약간 지연
+  if(!ninja.contentWindow) ninja.src = ninjaUrl(); // 소스만 로드
+  setNinjaBlend(CONFIG.BLEND_WELCOME);             // 숨김
 
   stepWelcome();
 });
@@ -447,6 +448,7 @@ function stepWelcome(){
     msg.textContent='';                 // 문구 제거
     countdown.style.display='none';     // 타이머는 안내문에서만
     startBtn.style.display='inline-block';
+    setNinjaBlend(CONFIG.BLEND_WELCOME); // 여전히 숨김
   },3000);
 }
 
@@ -456,9 +458,9 @@ onPress(startBtn, async ()=>{
   if(guideTimer) return;   // 재진입 방지
   beep(660,150);
   startBtn.style.display='none';
-  // 마이크는 여기서 별도로 요청(안정성↑)
-  await startMic().catch(()=>{});
+  await startMic().catch(()=>{});       // 마이크는 분리 요청
   showOverlayText(formatGuide(), false);
+  setNinjaBlend(CONFIG.BLEND_WELCOME);  // 안내문 동안 숨김
 
   let sec = 60;
   countdown.style.display='block';
@@ -476,11 +478,14 @@ onPress(startBtn, async ()=>{
 
 /* 4) WALK → 3초 후 STOP → 3초 후 숨김 + 이때부터 시각화 표시 ON */
 function stepWalkStop(){
-  drawingEnabled = true;     // === 여기서부터 화면에 궤적 표시 시작 ===
+  drawingEnabled = true;                 // === 여기서부터 궤적 표시 시작 ===
+  setNinjaBlend(CONFIG.BLEND_WALK);      // 레졸룸 살짝 보이기
   showOverlayText('WALK : 공간을 걸어보세요.', true);
+
   setTimeout(()=>{
+    setNinjaBlend(CONFIG.BLEND_STOP);    // STOP에서 더 낮춤
     showOverlayText('STOP : 공간에 멈춰 주변을 살피세요.', true);
-    setTimeout(()=>{ hideOverlay(); }, 3000);
+    setTimeout(()=>{ hideOverlay(); /* 레졸룸은 켜둔 채 */ }, 3000);
   }, 3000);
 }
 
@@ -501,7 +506,6 @@ document.addEventListener('visibilitychange', ()=>{
   if(document.visibilityState==='visible'){
     setViewportVars();
     applyRezScale();
-    showNinja(true);
     camView.play().catch(()=>{});   // 🔁 재생 재요청
     if(!currentStream){ restartCameraSoon(50); }
     if(audioCtx && audioCtx.state==='suspended'){ audioCtx.resume().catch(()=>{}); }
@@ -513,6 +517,19 @@ window.addEventListener('orientationchange', ()=>{
     camView.play().catch(()=>{});   // 🔁 회전 뒤 재요청
     if(!currentStream){ restartCameraSoon(50); }
   },120);
+});
+
+/* ===== 현장용: 3-탭으로 레졸룸 진하기 순환(옵션) ===== */
+const cycle = [0, 0.15, 0.30];
+let ci = 0, taps=0, last=0;
+window.addEventListener('touchend', ()=>{
+  const now = Date.now();
+  taps = (now-last < 350) ? taps+1 : 1; last = now;
+  if(taps>=3){
+    ci = (ci+1) % cycle.length;
+    setNinjaBlend(cycle[ci]);
+    taps = 0;
+  }
 });
 
 })();
