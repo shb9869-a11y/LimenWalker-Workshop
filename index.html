@@ -133,7 +133,6 @@ function stepWelcome(){
   showOverlay('WELCOME TO LIMENWALKER WORKSHOP',true);
   setTimeout(()=>{
     beep(880,120);
-    // 화면 교체 → PRESS 버튼만 표시
     msg.textContent='';
     startBtn.style.display='inline-block';
   },3000);
@@ -152,8 +151,7 @@ startBtn.addEventListener('click',()=>{
     countdown.textContent=`${sec}초 후 탐사가 시작됩니다.`;
     if(sec<=0){
       clearInterval(timer);
-      showOverlay('WALK : 공간을 탐사하세요.',true);
-      countdown.style.display='none';
+      stepWalk();
     }
   },1000);
 });
@@ -163,11 +161,20 @@ function formatGuide(){
   const lines=[
     "안녕하세요. 리멘워커 워크숍의 첫 번째 워크숍 발표를 찾아와주신 여러분에게 감사의 인사를 올립니다.",
     "이곳은 무작위로 수집된 시간이 이성적으로 분류되어 예측가능한 현실로 구성된 공간입니다.",
-    "이곳에서 이곳에 존재하던 ‘무작위로 수집된 시간’은 예측가능한 현실로부터 탈출하게 됩니다.",
+    "어느 날, 이곳에 존재하던 ‘무작위로 수집된 시간’은 예측가능한 현실로부터 탈출하게 됩니다.", // ✅ 수정됨
     "잠시후, 당신의 핸드폰 스크린 위로는 ‘당신이 바라보는 현실 공간’과 ‘이 공간을 탈출한 ‘시간’이 바라보는 공간’이 동시에 투사될 것입니다.",
     "3분 간의 시간 동안 당신은 공간을 자유롭게 거닐며, 이 공간을 탈출한 ‘시간’이 바라보는 공간’이 함께 포착해 나가시면 됩니다."
   ];
   return lines.map((l,i)=>`${i+1}. ${l}`).join("\n\n");
+}
+
+/* --- 5. WALK → STOP 순서 --- */
+function stepWalk(){
+  showOverlay('WALK : 공간을 걸어보세요.',true);
+  setTimeout(()=>{
+    showOverlay('STOP : 공간에 멈춰 주변을 살피세요.',true);
+    setTimeout(()=>{ hideOverlay(); },3000);
+  },3000);
 }
 })();
 </script>
