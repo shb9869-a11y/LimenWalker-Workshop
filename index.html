@@ -149,6 +149,14 @@ const CONFIG = {
     GUIDE:   { CAMERA: 1.00, NINJA: 0.50, TRAIL: 0.00 },
     WALK:    { CAMERA: 0.95, NINJA: 0.45, TRAIL: 0.95 },
     STOP:    { CAMERA: 0.95, NINJA: 0.40, TRAIL: 0.85 },
+  },
+  /* ▼ 궤적 민감도 업 */
+  SENS: {
+    M_PER_PX: 0.35,           // 더 민감하게: 0.35m 당 1px
+    MIN_STEP_M: 0.03,         // 최소 거리(미만이면 보정)
+    FORCE_ADD_MS: 1200,       // 이 시간 이상 새 점 없으면 강제 추가
+    MICRO_FROM_SPEED: true,   // speed/heading으로 미세 이동 합성
+    MICRO_MAX_STEP_M: 0.25
   }
 };
 
@@ -285,8 +293,9 @@ function applyLayerMix(){
 /* ===== Sensors & Trajectory (공용 값/함수) ===== */
 let points = [];
 let drawingEnabled = false;
-let metersPerPixel = 1.2;
-const MAX_POINTS = 2500;
+/* 더 예민하게: 1px당 0.35m */
+let metersPerPixel = CONFIG.SENS.M_PER_PX;
+const MAX_POINTS = 3000;
 const DECAY_START = 10_000, MAX_AGE = 60_000, MAX_JITTER = 18;
 let motionMag = 0;
 
@@ -302,6 +311,15 @@ function enableMotionIfNeeded(){
   }catch{}
   addEventListener('devicemotion', onMotion, {passive:true});
 }
+
+/* 방향 추정을 위한 폴백 (heading 미제공 시) */
+let lastYaw = 0;
+addEventListener('deviceorientation', (e)=>{ 
+  // iOS의 alpha는 보정 안될 수 있지만 미세 이동 방향용으로만 사용
+  const a = (e.alpha ?? lastYaw) * Math.PI/180;
+  if(Number.isFinite(a)) lastYaw = a;
+}, {passive:true});
+
 const M_PER_DEG = 111320;
 function llToMeters(lat0, lon0, lat, lon){
   const x = (lon - lon0) * Math.cos(lat0 * Math.PI/180) * M_PER_DEG;
@@ -348,35 +366,72 @@ function drawTrajectory(){
 }
 let rafId=null; function loop(){ drawTrajectory(); rafId = requestAnimationFrame(loop); }
 
-/* ===== GPS: 안정 워치 + 하트비트 폴링 ===== */
+/* ===== GPS: 초민감 + 하트비트 + 미세 이동 합성 ===== */
 let gpsWatchId = null, firstFix = null;
 let lastFixTime = 0;
 let gpsHeartbeat = null;
-const GPS_OPTS = { enableHighAccuracy:true, maximumAge:0, timeout:10000 };
+const GPS_OPTS = { enableHighAccuracy:true, maximumAge:0, timeout:5000 };
+
+let lastXm=null, lastYm=null, lastAddTime=0, lastHeadingRad=0;
+function hypot2(ax, ay, bx, by){ const dx=ax-bx, dy=ay-by; return Math.hypot(dx,dy); }
+
+function addPointMeters(xm, ym){
+  const p = metersToCanvas(xm, ym);
+  points.push({ x:p.x, y:p.y, t:performance.now(), speed:0 });
+  if(points.length > MAX_POINTS) points.shift();
+  lastXm=xm; lastYm=ym; lastAddTime=Date.now();
+}
 
 function handlePosition(pos){
-  const { latitude:lat, longitude:lon, speed } = pos.coords;
-  if(!firstFix){ firstFix = { lat, lon }; }
+  const { latitude:lat, longitude:lon, speed=0, heading=null } = pos.coords;
+  if(!firstFix){ firstFix = { lat, lon }; lastFixTime = Date.now(); const m0=llToMeters(firstFix.lat, firstFix.lon, lat, lon); addPointMeters(m0.x, m0.y); return; }
   const m  = llToMeters(firstFix.lat, firstFix.lon, lat, lon);
-  const p  = metersToCanvas(m.x, m.y);
-  points.push({
-    x:p.x, y:p.y, t:performance.now(),
-    speed:(Number.isFinite(speed)?speed:0)||0
-  });
-  if(points.length > MAX_POINTS) points.shift();
-  lastFixTime = Date.now();
+  const now = Date.now();
+  let moved = true;
+
+  if(lastXm!=null && lastYm!=null){
+    const dist = hypot2(m.x, m.y, lastXm, lastYm); // m 단위
+    if(dist >= CONFIG.SENS.MIN_STEP_M){
+      addPointMeters(m.x, m.y);
+      lastHeadingRad = Number.isFinite(heading) ? (heading*Math.PI/180) : lastHeadingRad;
+    }else{
+      moved = false;
+      // 미세 이동 합성 (speed/heading 또는 yaw, motion)
+      if(CONFIG.SENS.MICRO_FROM_SPEED){
+        let dir = Number.isFinite(heading) ? (heading*Math.PI/180) : (lastHeadingRad || lastYaw);
+        const base = Math.min(CONFIG.SENS.MICRO_MAX_STEP_M,
+                              Math.max(0.035, speed*0.45 + Math.min(0.12, (motionMag-9)*0.012)));
+        if(base > 0.03){
+          const nx = lastXm + Math.cos(dir)*base;
+          const ny = lastYm + Math.sin(dir)*base;
+          addPointMeters(nx, ny);
+        }
+      }
+      // 강제 주기적 추가 (정지처럼 보여도 최소 드리프트)
+      if(now - lastAddTime > CONFIG.SENS.FORCE_ADD_MS){
+        const eps = 0.05; // 5cm 미묘한 드리프트
+        const nx = (lastXm??m.x) + (Math.random()-0.5)*2*eps;
+        const ny = (lastYm??m.y) + (Math.random()-0.5)*2*eps;
+        addPointMeters(nx, ny);
+      }
+    }
+  }else{
+    addPointMeters(m.x, m.y);
+  }
+
+  lastFixTime = now;
 }
 
 function startGPS(){
   stopGPS();
   firstFix = null;
-  // 1) 초깃값 한 번 강제 (권한/정밀도 깨우기)
+  lastXm=lastYm=null; lastAddTime=0;
+
   navigator.geolocation.getCurrentPosition(
     (pos)=>{ handlePosition(pos); },
     (err)=>{ console.warn('getCurrentPosition error:', err); },
     GPS_OPTS
   );
-  // 2) 지속 워치
   try{
     gpsWatchId = navigator.geolocation.watchPosition(
       handlePosition,
@@ -385,17 +440,17 @@ function startGPS(){
     );
   }catch(e){ console.warn('watchPosition failed:', e); }
 
-  // 3) 하트비트: 5초 이상 업데이트 없으면 getCurrentPosition으로 깨우기
+  // 하트비트: 1초마다 깨우기 (아주 예민)
   if(!gpsHeartbeat){
     gpsHeartbeat = setInterval(()=>{
       const stale = Date.now() - lastFixTime;
-      if(stale > 5000){
+      if(stale > 1500){
         navigator.geolocation.getCurrentPosition(
           (pos)=>{ handlePosition(pos); },
           ()=>{}, GPS_OPTS
         );
       }
-    }, 3000);
+    }, 1000);
   }
 }
 
@@ -527,7 +582,7 @@ onPress(startBtn, async ()=>{
   },1000);
 });
 
-/* ▼ 변경: WALK/STOP 문구 교체 + 3단계 안내 */
+/* ▼ WALK/STOP 문구 교체 + 3단계 안내 */
 function stepWalkStop(){
   drawingEnabled = true;
 
@@ -539,10 +594,7 @@ function stepWalkStop(){
     showOverlayText('당신은 문지방의 끝에서 멈춰 설 수 있다.', true);
 
     setTimeout(()=>{
-      // 세 번째 문구
       showOverlayText('자유롭게 거닐어라', true);
-
-      // 3초 뒤 오버레이 닫고 타이머 시작
       setTimeout(()=>{ hideOverlay(); startExploreTimer(180); }, 3000);
     }, 3000);
   }, 3000);
@@ -572,8 +624,7 @@ document.addEventListener('visibilitychange', ()=>{
     if(cornerTimer.style.display==='block'){
       cornerTimer.textContent = fmt(Math.max(0, exploreRemain|0));
     }
-    // ★ GPS 워치 재시작 (iOS에서 종종 멈추는 문제 대비)
-    stopGPS(); startGPS();
+    stopGPS(); startGPS(); // GPS 재시작 (iOS 침묵 대응)
   }
 });
 window.addEventListener('orientationchange', ()=>{
