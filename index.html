@@ -41,7 +41,7 @@
     transform:translate(-50%,-50%) scale(1); transform-origin:50% 50%;
     border:0; background:transparent; image-rendering:auto;
     z-index:4; pointer-events:none; opacity:0; transition:opacity .25s ease;
-    mix-blend-mode: screen; /* 악몽 감각 */
+    mix-blend-mode: screen;
     will-change:opacity, transform;
   }
 
@@ -56,12 +56,12 @@
     pointer-events:none; z-index:5;
   }
 
-  /* 중앙 안내(작게 + 중앙 고정) */
+  /* 중앙 안내(작게 + 중앙 고정, 터치 통과) */
   #infoText, #overlay{
     position:fixed; inset:0; display:flex; align-items:center; justify-content:center; flex-direction:column; text-align:center;
   }
   #infoText{
-    font-size:clamp(12px,1.8vmin,16px); opacity:.9; z-index:8; pointer-events:auto;
+    font-size:clamp(12px,1.8vmin,16px); opacity:.9; z-index:8; pointer-events:none; /* ★ 터치 통과 */
   }
   #overlay{
     background:rgba(0,0,0,.65);
@@ -92,16 +92,6 @@
     pointer-events:none;
     display:none;
   }
-
-  /* HTTPS 안내 패널 */
-  #httpsBlock{
-    position:fixed; inset:0; z-index:200; display:none;
-    align-items:center; justify-content:center;
-    background:rgba(0,0,0,.88); color:#fff; text-align:center; padding:20px;
-  }
-  #httpsInner{ max-width:560px; }
-  .kbd{ display:inline-block; border:1px solid #888; padding:2px 6px; border-radius:4px; background:#111 }
-  .uiBtn{ padding:.4em .8em; cursor:pointer; background:transparent; color:#fff; border:1px solid #fff; margin:6px; }
 </style>
 </head>
 <body>
@@ -117,8 +107,7 @@
 <div class="proscenium" aria-hidden="true"></div>
 
 <div id="infoText">
-  화면을 한번 탭하면 카메라/마이크/센서 권한을 요청합니다.
-  <button id="kickoff" class="stageBtn" style="margin-top:16px">TAP TO START</button>
+  화면을 한번 터치하면 카메라/마이크/센서 권한을 요청합니다.
 </div>
 
 <div id="overlay" class="hidden">
@@ -130,26 +119,11 @@
 <!-- 180초 타이머 -->
 <div id="cornerTimer">03:00</div>
 
-<!-- HTTPS 안내 -->
-<div id="httpsBlock">
-  <div id="httpsInner">
-    <div style="font-size:18px;margin-bottom:10px"><b>보안 연결(HTTPS)이 필요합니다</b></div>
-    <div style="opacity:.9">HTTP 환경에서는 카메라/마이크 권한이 차단됩니다.</div>
-    <div style="margin:12px 0 8px">아래 주소로 접속해주세요:</div>
-    <div id="httpsUrlBox" class="kbd" style="user-select:all;display:inline-block;"></div>
-    <div style="margin-top:12px">
-      <button id="copyHttps" class="uiBtn">주소 복사</button>
-      <button id="openHttps" class="uiBtn">열기</button>
-    </div>
-  </div>
-</div>
-
 <script>
 (()=> {
 /* ===== Config ===== */
 const CONFIG = {
   ROOM_ID: "YOURROOMID",
-  HTTPS_ORIGIN: "",         // 필요하면 여기 https 도메인 적기 (예: "https://yourdomain.com")
   REZ_SCALE: 0.65,
   LINE_WIDTH: 0.6,
   LINE_DASH: [1.5,10],
@@ -160,31 +134,6 @@ const CONFIG = {
   }
 };
 
-/* ===== HTTPS 가드 ===== */
-const httpsBlock = document.getElementById('httpsBlock');
-const httpsBox = document.getElementById('httpsUrlBox');
-const btnCopy = document.getElementById('copyHttps');
-const btnOpen = document.getElementById('openHttps');
-function isLocalHost(){ return /^(localhost|127\.0\.0\.1)$/i.test(location.hostname); }
-function shouldForceHttps(){ return !window.isSecureContext && !isLocalHost(); }
-function tryHttpsRedirect(){
-  if(shouldForceHttps()){
-    if(CONFIG.HTTPS_ORIGIN){
-      const t=new URL(location.href), o=CONFIG.HTTPS_ORIGIN.replace(/\/+$/,'');
-      location.replace(o+t.pathname+t.search+t.hash);
-      return true;
-    }else{
-      httpsBox.textContent = location.href.replace(/^http:/,'https:');
-      httpsBlock.style.display='flex';
-      return false;
-    }
-  }
-  return false;
-}
-if(shouldForceHttps()) tryHttpsRedirect();
-btnCopy?.addEventListener('click', async ()=>{ const url=httpsBox.textContent; try{ await navigator.clipboard.writeText(url); alert('복사되었습니다'); }catch{ alert(url); }});
-btnOpen?.addEventListener('click', ()=>{ location.href=httpsBox.textContent; });
-
 /* ===== Elements ===== */
 const camView   = document.getElementById('cameraView');
 const trail     = document.getElementById('trailCanvas');
@@ -194,7 +143,6 @@ const overlay   = document.getElementById('overlay');
 const msg       = document.getElementById('msg');
 const startBtn  = document.getElementById('startBtn');
 const infoText  = document.getElementById('infoText');
-const kickoff   = document.getElementById('kickoff');
 const countdown = document.getElementById('countdown');
 const cornerTimer = document.getElementById('cornerTimer');
 
@@ -273,7 +221,6 @@ const injectedCss = encodeURIComponent(`
 const ninjaBase = `https://vdo.ninja/?view=${encodeURIComponent(CONFIG.ROOM_ID)}&clean&autostart&noaudio&codec=vp8&solo&transparent=1&css=${injectedCss}`;
 const ninjaUrl  = () => `${ninjaBase}&ts=${Date.now()}`;
 
-/* Rez scale */
 function applyRezScale(){
   const s = Math.max(0.2, Math.min(1, Number(CONFIG.REZ_SCALE)||1));
   ninja.style.width  = `calc(var(--vwpx) * ${s})`;
@@ -283,7 +230,7 @@ function applyRezScale(){
 }
 applyRezScale();
 
-/* 선로딩 (보이지 않아도 먼저 연결) */
+/* 선로딩 */
 (function preloadOverlay(){
   if(!ninja.src || ninja.src === 'about:blank'){ ninja.src = ninjaUrl(); }
 })();
@@ -378,20 +325,24 @@ function drawTrajectory(){
 }
 let rafId=null; function loop(){ drawTrajectory(); rafId = requestAnimationFrame(loop); }
 
-/* ===== Media (카메라/마이크) + 워치독 ===== */
+/* ===== Media (카메라+마이크 한 번에) + 워치독 ===== */
 let currentStream = null, ensureTimer = null, restartTimer = null;
-async function startCamera(){
-  const stream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:{ ideal:"environment" } }, audio:false });
+async function startMedia(){ // ★ 한 번에 요청 → 팝업 확실
+  const stream = await navigator.mediaDevices.getUserMedia({
+    video: { facingMode: { ideal: "environment" } },
+    audio: true
+  });
   currentStream = stream;
   camView.srcObject = stream;
-  camView.muted = true;
-  camView.setAttribute('playsinline','');
-  camView.load();
+  camView.muted = true; camView.setAttribute('playsinline',''); camView.load();
   try { await camView.play(); } catch {}
+
+  // 오디오 트랙은 권한만 확보하고 즉시 mute/disable(반향 방지)
+  stream.getAudioTracks().forEach(t=>{ t.enabled=false; });
+
   bindTrackGuards(stream);
   pingEnsurePlaying();
 }
-async function startMic(){ try{ await navigator.mediaDevices.getUserMedia({ audio:true }); }catch{} }
 function bindTrackGuards(stream){
   stream.getVideoTracks().forEach(tr=>{
     tr.onended  = ()=>{ restartCameraSoon(); };
@@ -405,7 +356,7 @@ function restartCameraSoon(ms=350){
     restartTimer=null;
     try{ if(currentStream) currentStream.getTracks().forEach(t=>t.stop()); }catch{}
     currentStream=null;
-    try{ await startCamera(); }catch(e){ console.error('restart camera fail',e); }
+    try{ await startMedia(); }catch(e){ console.error('restart media fail',e); }
   }, ms);
 }
 function pingEnsurePlaying(){
@@ -413,23 +364,14 @@ function pingEnsurePlaying(){
   ensureTimer = setInterval(()=>{
     if(camView.readyState >= 2 && camView.paused){ camView.play().catch(()=>{}); }
     const ok = currentStream && currentStream.getVideoTracks().some(t=>t.readyState==='live');
-    if(!ok) restartCameraSoon(100);
+    if(!ok) restartCameraSoon(120);
   }, 1000);
-}
-
-/* ===== Input binder (pointerup 우선) ===== */
-function onPress(el, handler){
-  let fired=false;
-  const onceWrap=(e)=>{ if(fired) return; fired=true; handler(e); };
-  // pointerup이 있으면 이걸 우선 사용 (iOS/안드 모두 안정적)
-  el.addEventListener('pointerup', onceWrap, { once:true });
-  // 보조: 일부 환경에서 pointer 이벤트가 비활성일 때 click 사용
-  el.addEventListener('click', onceWrap, { once:true });
 }
 
 /* ===== 180초 타이머 ===== */
 let exploreTimerId=null, exploreRemain=0;
-function fmt(t){ const m=String(Math.floor(t/60)).padStart(2,'0'); const s=String(t%60).padStart(2,'0'); return `${m}:${s}`; }
+function fmt(t){ const m=String(Math.floor(t/60)).padStart(2,'0'); const s=String(t%60)).padStart(2,'0'); return `${m}:${s}`; }
+/* (오타 방지) */ function fmt(t){ const m=String(Math.floor(t/60)).padStart(2,'0'); const s=String(t%60).padStart(2,'0'); return `${m}:${s}`; }
 function startExploreTimer(seconds=180){
   exploreRemain=seconds;
   cornerTimer.textContent=fmt(exploreRemain);
@@ -447,27 +389,32 @@ function startExploreTimer(seconds=180){
   },1000);
 }
 
-/* ===== Flow ===== */
-/* 0) 시작 버튼(안내 패널)에서 권한 요청 */
-onPress(kickoff, async ()=>{
+/* ===== 전역 첫 제스처: 어디든 한 번 탭하면 시작 ===== */
+let booted=false;
+function firstGesture(){
+  if(booted) return; booted=true;
   initAudioContext(); keepScreenOn();
-  // 안내 패널 숨김
-  document.getElementById('infoText').style.display='none';
+  infoText.style.display='none';
 
-  // 한 번의 제스처에서 카메라+마이크 권한 요청
-  await startCamera().catch(e=>console.error('camera start fail',e));
-  await startMic().catch(e=>console.warn('mic denied', e));
+  // 카메라+마이크 동시 권한
+  startMedia().then(()=>{
+    // 센서/위치 + 드로잉
+    enableMotionIfNeeded(); startGPS(); if(!rafId) loop();
 
-  // 센서/위치 + 드로잉 루프
-  enableMotionIfNeeded(); startGPS(); if(!rafId) loop();
+    // Ninja 준비
+    applyRezScale();
+    if(!ninja.contentWindow) ninja.src = ninjaUrl();
 
-  // 레졸룸 준비
-  applyRezScale();
-  if(!ninja.contentWindow) ninja.src = ninjaUrl();
-
-  state='WELCOME'; applyLayerMix();
-  stepWelcome();
-});
+    state='WELCOME'; applyLayerMix();
+    stepWelcome();
+  }).catch(err=>{
+    console.error('media error', err);
+    showOverlayText('권한 요청이 거부되었습니다.\n브라우저 설정에서 카메라/마이크를 허용해주세요.', true);
+  });
+}
+/* 캡처 단계에서 확실히 잡기 위해 pointerdown 우선 + click 보조, 캡처/최상위에서 1회 */
+document.documentElement.addEventListener('pointerdown', firstGesture, { once:true, capture:true });
+document.documentElement.addEventListener('click', firstGesture, { once:true, capture:true });
 
 function stepWelcome(){
   showOverlayText('WELCOME TO LIMENWALKER WORKSHOP', true);
@@ -480,9 +427,9 @@ function stepWelcome(){
   },3000);
 }
 
-/* 1) PRESS 버튼 → 60초 가이드 → 3분 탐사 */
+/* PRESS → 60초 가이드 → 3분 탐사 */
 let guideTimer=null;
-onPress(startBtn, async ()=>{
+startBtn.addEventListener('click', ()=>{
   if(guideTimer) return;
   beep(660,150);
   startBtn.style.display='none';
@@ -546,7 +493,7 @@ window.addEventListener('orientationchange', ()=>{
   },120);
 });
 
-/* 루프 시작자 */
+/* 루프 */
 let rafId=null; function loop(){ drawTrajectory(); rafId = requestAnimationFrame(loop); }
 
 })();
