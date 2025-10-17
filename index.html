@@ -38,7 +38,7 @@
     width:var(--vwpx); height:var(--vhpx);
     transform:translate(-50%,-50%) scale(1);
     border:0; background:transparent; image-rendering:auto;
-    z-index:4; pointer-events:none; opacity:0;
+    z-index:4; pointer-events:none; opacity:0.5;
     transition:opacity .25s ease; mix-blend-mode:screen;
   }
 
@@ -68,8 +68,6 @@
   #overlay.hidden{ opacity:0; pointer-events:none; }
   .centerText{ text-align:center; white-space:pre-line; font-size:clamp(13px,1.9vmin,17px); }
 
-  #countdown{ font-size:clamp(11px,1.6vmin,15px); opacity:.8; margin-top:12px; display:none; }
-
   #cornerTimer{
     position:fixed;
     right:calc(12px + env(safe-area-inset-right));
@@ -95,6 +93,16 @@
     pointer-events:none; transition:opacity .6s ease; opacity:0;
   }
   #theEnd.show{ display:flex; opacity:1; }
+
+  /* ▶ 스타터 버튼 (권한 팝업용) */
+  #starter{
+    position:fixed; inset:auto;
+    left:50%; top:50%; transform:translate(-50%,-50%);
+    z-index:12; pointer-events:auto;
+    border:1px solid #fff; background:transparent; color:#fff;
+    padding:.7em 1.4em; text-transform:uppercase;
+    font-size:clamp(14px,2vmin,20px); letter-spacing:.06em; cursor:pointer;
+  }
 </style>
 </head>
 <body>
@@ -102,16 +110,18 @@
 <video id="cameraView" autoplay muted playsinline></video>
 <canvas id="trailCanvas"></canvas>
 <iframe id="ninjaOverlay"
-  allow="autoplay; camera; microphone; fullscreen"
+  allow="autoplay; camera; microphone; fullscreen; clipboard-read; clipboard-write"
   allowtransparency="true" referrerpolicy="no-referrer" src="about:blank">
 </iframe>
 
 <div class="proscenium" aria-hidden="true"></div>
-<div id="infoText">화면을 터치하면 카메라/마이크/센서 권한을 요청합니다.</div>
+<div id="infoText">화면 중앙의 버튼을 눌러<br>카메라/마이크/센서/위치 권한을 허용해주세요.</div>
+
+<!-- 권한 요청을 확실히 띄우는 전용 스타터 버튼 -->
+<button id="starter">PRESS TO START</button>
 
 <div id="overlay" class="hidden">
   <div id="msg" class="centerText"></div>
-  <div id="countdown"></div>
 </div>
 
 <div id="cornerTimer">03:00</div>
@@ -119,14 +129,16 @@
 
 <script>
 (()=>{
+/* ===== Config ===== */
 const CONFIG = {
   ROOM_ID: "YOURROOMID",
   REZ_SCALE: 0.65,
   LINE_WIDTH: 0.6,
   LINE_DASH: [1.5,10],
-  LAYERS:{WELCOME:{CAMERA:1,NINJA:0.5,TRAIL:0}}
+  SENS: { M_PER_PX: 0.35 }
 };
 
+/* ===== Elements ===== */
 const camView=document.getElementById('cameraView');
 const trail=document.getElementById('trailCanvas');
 const tctx=trail.getContext('2d');
@@ -134,11 +146,11 @@ const ninja=document.getElementById('ninjaOverlay');
 const infoText=document.getElementById('infoText');
 const overlay=document.getElementById('overlay');
 const msg=document.getElementById('msg');
-const countdown=document.getElementById('countdown');
 const cornerTimer=document.getElementById('cornerTimer');
 const theEndEl=document.getElementById('theEnd');
+const starter=document.getElementById('starter');
 
-/* === Viewport === */
+/* ===== Viewport ===== */
 function setViewportVars(){
   const w=innerWidth,h=innerHeight,dpr=Math.max(1,devicePixelRatio||1);
   document.documentElement.style.setProperty('--vwpx',w+'px');
@@ -147,39 +159,68 @@ function setViewportVars(){
 }
 setViewportVars(); addEventListener('resize',setViewportVars);
 
-/* === Audio === */
+/* ===== Audio ===== */
 let audioCtx;
-function initAudio(){ if(!audioCtx) audioCtx=new (window.AudioContext||window.webkitAudioContext)(); audioCtx.resume().catch(()=>{});}
-function beep(freq=880,dur=120){ try{initAudio();const o=audioCtx.createOscillator(),g=audioCtx.createGain();o.type='square';o.frequency.value=freq;g.gain.value=0.001;o.connect(g).connect(audioCtx.destination);const t=audioCtx.currentTime;g.gain.exponentialRampToValueAtTime(0.25,t+.02);g.gain.exponentialRampToValueAtTime(0.001,t+dur/1000);o.start(t);o.stop(t+dur/1000+.02);}catch{}}
-function playTone(freq=80,duration=10000){try{initAudio();const o=audioCtx.createOscillator(),g=audioCtx.createGain();o.type='sine';o.frequency.setValueAtTime(freq,audioCtx.currentTime);g.gain.value=0.0001;o.connect(g).connect(audioCtx.destination);const t=audioCtx.currentTime;g.gain.exponentialRampToValueAtTime(0.3,t+.15);g.gain.setTargetAtTime(0.28,t+.5,.5);g.gain.setTargetAtTime(0.0001,t+duration/1000-.2,.15);o.start(t);o.stop(t+duration/1000+.02);}catch{}}
+function initAudio(){ if(!audioCtx){ audioCtx=new (window.AudioContext||window.webkitAudioContext)(); } if(audioCtx.state==='suspended') audioCtx.resume().catch(()=>{}); }
+function tapBeep(){ try{ initAudio(); const o=audioCtx.createOscillator(), g=audioCtx.createGain(); o.type='square'; o.frequency.value=660; g.gain.value=0.001; o.connect(g).connect(audioCtx.destination); const t=audioCtx.currentTime; g.gain.exponentialRampToValueAtTime(0.2,t+.02); g.gain.exponentialRampToValueAtTime(0.001,t+.12); o.start(t); o.stop(t+.14);}catch{} }
+function playTone(freq=80,duration=10000){ try{ initAudio(); const o=audioCtx.createOscillator(), g=audioCtx.createGain(); o.type='sine'; o.frequency.value=freq; g.gain.value=0.0001; o.connect(g).connect(audioCtx.destination); const t=audioCtx.currentTime; g.gain.exponentialRampToValueAtTime(0.3,t+.15); g.gain.setTargetAtTime(0.28,t+.5,.5); g.gain.setTargetAtTime(0.0001,t+duration/1000-.2,.15); o.start(t); o.stop(t+duration/1000+.02);}catch{} }
 
-/* === VDO.Ninja === */
+/* ===== VDO.Ninja ===== */
 const ninjaBase=`https://vdo.ninja/?view=${encodeURIComponent(CONFIG.ROOM_ID)}&clean&autostart&noaudio&codec=vp8&solo&transparent=1`;
 const ninjaUrl=()=>`${ninjaBase}&ts=${Date.now()}`;
 ninja.src=ninjaUrl();
-function applyRezScale(){const s=CONFIG.REZ_SCALE;ninja.style.width=`calc(var(--vwpx)*${s})`;ninja.style.height=`calc(var(--vhpx)*${s})`;ninja.style.left='50%';ninja.style.top='50%';ninja.style.transform=`translate(-50%,-50%) scale(${1/s})`;ninja.style.opacity='0.5';}
+function applyRezScale(){ const s=CONFIG.REZ_SCALE; ninja.style.width=`calc(var(--vwpx)*${s})`; ninja.style.height=`calc(var(--vhpx)*${s})`; ninja.style.left='50%'; ninja.style.top='50%'; ninja.style.transform=`translate(-50%,-50%) scale(${1/s})`; }
 applyRezScale();
 
-/* === GPS & Trajectory === */
-let points=[];let drawingEnabled=false;
-function metersToCanvas(xm,ym){const w=trail.clientWidth,h=trail.clientHeight;return{x:w/2+xm/0.35,y:h/2-ym/0.35};}
-function draw(){tctx.fillStyle='rgba(0,0,0,0.06)';tctx.fillRect(0,0,trail.width,trail.height);if(points.length<2||!drawingEnabled)return;tctx.beginPath();tctx.setLineDash([1.5,10]);tctx.lineWidth=0.6;tctx.strokeStyle='rgba(255,255,255,0.9)';for(let i=1;i<points.length;i++){tctx.moveTo(points[i-1].x,points[i-1].y);tctx.lineTo(points[i].x,points[i].y);}tctx.stroke();requestAnimationFrame(draw);}
-function addPoint(x,y){points.push({x,y});if(points.length>3000)points.shift();}
-let watchId=null,firstFix=null;function llToMeters(lat0,lon0,lat,lon){const M=111320;return{ x:(lon-lon0)*Math.cos(lat0*Math.PI/180)*M, y:(lat-lat0)*M };}
-function startGPS(){navigator.geolocation.getCurrentPosition(p=>{firstFix={lat:p.coords.latitude,lon:p.coords.longitude};});watchId=navigator.geolocation.watchPosition(p=>{const {latitude,longitude}=p.coords;if(!firstFix)firstFix={lat:latitude,lon:longitude};const m=llToMeters(firstFix.lat,firstFix.lon,latitude,longitude);const c=metersToCanvas(m.x,m.y);addPoint(c.x,c.y);},()=>{}, {enableHighAccuracy:true,timeout:3000});}
+/* ===== Trajectory ===== */
+let points=[]; let drawingEnabled=false; let metersPerPixel=CONFIG.SENS.M_PER_PX;
+function metersToCanvas(xm,ym){ const w=trail.clientWidth,h=trail.clientHeight; return { x:w/2 + xm/metersPerPixel, y:h/2 - ym/metersPerPixel }; }
+function draw(){ tctx.fillStyle='rgba(0,0,0,0.06)'; tctx.fillRect(0,0,trail.width,trail.height); if(points.length<2||!drawingEnabled){ requestAnimationFrame(draw); return; } tctx.beginPath(); tctx.setLineDash([1.5,10]); tctx.lineWidth=CONFIG.LINE_WIDTH; tctx.strokeStyle='rgba(255,255,255,0.9)'; for(let i=1;i<points.length;i++){ tctx.moveTo(points[i-1].x,points[i-1].y); tctx.lineTo(points[i].x,points[i].y);} tctx.stroke(); requestAnimationFrame(draw); }
+function addPointCanvas(x,y){ points.push({x,y}); if(points.length>3000) points.shift(); }
 
-/* === Overlay helpers === */
-function showOverlayText(text){msg.textContent=text;overlay.classList.remove('hidden');}
-function hideOverlay(){overlay.classList.add('hidden');}
+/* ===== GPS (권한 팝업 보장 + 워치) ===== */
+let watchId=null, firstFix=null; const M_PER_DEG=111320;
+function llToMeters(lat0,lon0,lat,lon){ return { x:(lon-lon0)*Math.cos(lat0*Math.PI/180)*M_PER_DEG, y:(lat-lat0)*M_PER_DEG }; }
+function startGPSWatch(){ try{ watchId = navigator.geolocation.watchPosition(p=>{ const {latitude,longitude}=p.coords; if(!firstFix) firstFix={lat:latitude,lon:longitude}; const m=llToMeters(firstFix.lat,firstFix.lon,latitude,longitude); const c=metersToCanvas(m.x,m.y); addPointCanvas(c.x,c.y); }, ()=>{}, {enableHighAccuracy:true, maximumAge:0, timeout:5000}); }catch(e){} }
 
-/* === 타이머 / 엔딩 === */
-let timerId=null,remain=0;
-function fmt(t){const m=String(Math.floor(t/60)).padStart(2,'0'),s=String(t%60).padStart(2,'0');return`${m}:${s}`;}
-function startTimer(sec=180){remain=sec;cornerTimer.textContent=fmt(remain);cornerTimer.style.display='block';
-timerId=setInterval(()=>{remain--;cornerTimer.textContent=fmt(remain);
-if(remain<=0){clearInterval(timerId);cornerTimer.textContent='00:00';playTone(80,10000);setTimeout(()=>{cornerTimer.style.display='none';theEndEl.classList.add('show');},10000);}},1000);}
+/* ===== Camera / Mic ===== */
+let currentStream=null;
+async function startMic(){ try{ await navigator.mediaDevices.getUserMedia({ audio:true }); }catch(e){} }
+async function startCamera(){ try{ const s=await navigator.mediaDevices.getUserMedia({ video:{ facingMode:{ideal:'environment'} }, audio:false }); currentStream=s; camView.srcObject=s; camView.muted=true; camView.setAttribute('playsinline',''); camView.load(); await camView.play().catch(()=>{}); }catch(e){} }
 
-/* === 문지방 텍스트 === */
+/* ===== Sensors (iOS 권한 팝업) ===== */
+async function requestOrientationPerm(){
+  try{
+    if(typeof DeviceMotionEvent!=='undefined' && typeof DeviceMotionEvent.requestPermission==='function'){
+      await DeviceMotionEvent.requestPermission().catch(()=>{});
+    }
+    if(typeof DeviceOrientationEvent!=='undefined' && typeof DeviceOrientationEvent.requestPermission==='function'){
+      await DeviceOrientationEvent.requestPermission().catch(()=>{});
+    }
+  }catch(e){}
+}
+
+/* ===== Overlay helpers ===== */
+function showOverlayText(text){ msg.textContent=text; overlay.classList.remove('hidden'); }
+function hideOverlay(){ overlay.classList.add('hidden'); }
+
+/* ===== 180초 타이머 + 엔딩 ===== */
+let timerId=null, remain=0;
+function fmt(t){ const m=String(Math.floor(t/60)).padStart(2,'0'), s=String(t%60).padStart(2,'0'); return `${m}:${s}`; }
+function startTimer(sec=180){
+  remain=sec; cornerTimer.textContent=fmt(remain); cornerTimer.style.display='block';
+  if(timerId) clearInterval(timerId);
+  timerId=setInterval(()=>{
+    remain--; cornerTimer.textContent=fmt(remain);
+    if(remain<=0){
+      clearInterval(timerId); cornerTimer.textContent='00:00';
+      playTone(80,10000);
+      setTimeout(()=>{ cornerTimer.style.display='none'; theEndEl.classList.add('show'); }, 10000);
+    }
+  },1000);
+}
+
+/* ===== 문지방 텍스트 ===== */
 const thresholdLines=[
   "문지방은 안과 밖을 동시에 밟고 있는 자리이다.",
   "한쪽 발은 여전히 안쪽의 온도에 닿아 있고, 다른 발은 이미 바깥의 공기를 느낀다.",
@@ -201,23 +242,80 @@ const thresholdLines=[
   "세계를 바라보는 방식을 바꾸는 아주 느린 혁명이다."
 ];
 function playThresholdTextSequence(){
-  let i=0;const interval=6000;
-  overlay.style.transition="opacity 2s ease";showOverlayText(thresholdLines[i]);overlay.style.opacity=1;
-  const seq=setInterval(()=>{overlay.style.opacity=0;setTimeout(()=>{i++;if(i>=thresholdLines.length){clearInterval(seq);hideOverlay();return;}msg.textContent=thresholdLines[i];overlay.style.opacity=1;},2000);},interval);
+  let i=0; const interval=6000;
+  overlay.style.transition="opacity 2s ease";
+  showOverlayText(thresholdLines[i]); overlay.style.opacity=1;
+  const seq=setInterval(()=>{
+    overlay.style.opacity=0;
+    setTimeout(()=>{
+      i++;
+      if(i>=thresholdLines.length){ clearInterval(seq); hideOverlay(); return; }
+      msg.textContent=thresholdLines[i];
+      overlay.style.opacity=1;
+    },2000);
+  },interval);
 }
 
-/* === Main Flow === */
-window.addEventListener('click', async ()=>{
-  initAudio();infoText.style.display='none';
-  await navigator.mediaDevices.getUserMedia({video:true,audio:true});
-  startGPS();drawingEnabled=true;draw();
-  showOverlayText("당신은 문지방을 밟으며 걷을 수 있다.");
-  setTimeout(()=>{showOverlayText("당신은 문지방의 끝에서 멈춰 설 수 있다.");
-    setTimeout(()=>{showOverlayText("자유롭게 거닐어라");
-      setTimeout(()=>{playThresholdTextSequence();startTimer(180);hideOverlay();},3000);
+/* ===== START FLOW (권한 팝업 보장) ===== */
+function bindStarter(){
+  const fireOnce=(fn)=>{
+    let fired=false;
+    const handler=(e)=>{ if(fired) return; fired=true; e.preventDefault(); e.stopPropagation(); fn(); };
+    starter.addEventListener('touchend', handler, {passive:false});
+    starter.addEventListener('click', handler, false);
+  };
+  fireOnce(async ()=>{
+    // 1) 오디오 언락
+    initAudio(); tapBeep();
+
+    // 2) 센서 권한(iOS)
+    await requestOrientationPerm();
+
+    // 3) 마이크 → 카메라 (연속 요청로 팝업 확실)
+    await startMic().catch(()=>{});
+    await startCamera().catch(()=>{});
+
+    // 4) 위치 팝업: getCurrentPosition으로 즉시 트리거
+    if('geolocation' in navigator){
+      navigator.geolocation.getCurrentPosition(
+        (pos)=>{
+          firstFix = { lat:pos.coords.latitude, lon:pos.coords.longitude };
+          const m = llToMeters(firstFix.lat, firstFix.lon, pos.coords.latitude, pos.coords.longitude);
+          const c = metersToCanvas(m.x, m.y); addPointCanvas(c.x,c.y);
+          startGPSWatch();
+        },
+        (err)=>{ startGPSWatch(); },
+        { enableHighAccuracy:true, maximumAge:0, timeout:8000 }
+      );
+    }
+
+    // 5) UI 전환 + 드로잉 시작
+    starter.style.display='none';
+    infoText.style.display='none';
+    drawingEnabled=true; draw();
+
+    // 6) 레졸룸 스케일 보정
+    applyRezScale();
+
+    // 7) 시퀀스: WALK/STOP 대체 문구 → 가이드 → 텍스트 재생 + 타이머
+    showOverlayText('당신은 문지방을 밟으며 걷을 수 있다.');
+    setTimeout(()=>{
+      showOverlayText('당신은 문지방의 끝에서 멈춰 설 수 있다.');
+      setTimeout(()=>{
+        showOverlayText('자유롭게 거닐어라');
+        setTimeout(()=>{
+          playThresholdTextSequence();
+          startTimer(180);
+          // overlay는 문장 시퀀스에서 관리 (hideOverlay 호출됨)
+        },3000);
+      },3000);
     },3000);
-  },3000);
-});
+  });
+}
+bindStarter();
+
+/* ===== Helpers / Globals used above ===== */
+let firstFix=null;
 })();
 </script>
 </body>
