@@ -539,60 +539,6 @@ function startExploreTimer(seconds=180){
   },1000);
 }
 
-/* ★★★ 문지방 텍스트(배경 없이) 시퀀스 추가 ★★★ */
-const thresholdLines = [
-  "문지방은 안과 밖을 동시에 밟고 있는 자리이다.",
-  "한쪽 발은 여전히 안쪽의 온도에 닿아 있고, 다른 발은 이미 바깥의 공기를 느낀다.",
-  "문지방은 아직 ‘밖’으로 나가지 않았지만, ‘안’에도 속하지 않은 상태이다.",
-  "그곳은 경계이자 쉼, 머무름과 이동이 겹쳐진 짧은 구간이다.",
-  "그래서 문지방을 걷는 일은 단순한 통과가 아닌, 머무름의 진동이다.",
-  "문지방 위에서 시간은 느리게 진동한다.",
-  "발끝이 공기를 가르며 나아가려 할 때, 몸의 중심은 아직 문 안쪽에 머문다.",
-  "이 미세한 어긋남이 감각을 깨운다.",
-  "세상의 질서는 잠시 흔들리고, 이성의 좌표는 흐릿해진다.",
-  "문지방의 걸음은 그렇게 질서의 틈새에 균열을 내는 행위이다.",
-  "그러나 이 걸음은 완전한 탈출이 아니다.",
-  "문지방은 언제나 두 세계를 동시에 품고 있기 때문이다.",
-  "안과 밖, 질서와 혼돈, 기억과 망각이 얽혀 있는 곳.",
-  "그래서 문지방을 걷는 자는 떠나면서도 머문다.",
-  "그가 딛는 발자국은 어느 한쪽에도 속하지 않는다.",
-  "그 흔적은 곧 사라지지만, 그 사라짐이야말로 새로운 공간이 열리는 순간이다.",
-  "문지방 위의 걷기는 세계를 바꾸려는 거대한 몸짓이 아니라,",
-  "세계를 바라보는 방식을 바꾸는 아주 느린 혁명이다."
-];
-
-function playThresholdTextSequence(){
-  // 현재 overlay 배경값을 기억한 뒤 투명으로 전환
-  const originalBg = getComputedStyle(overlay).backgroundColor;
-  overlay.style.background = 'transparent';
-
-  // 부드러운 텍스트 페이드를 위해 opacity만 사용
-  overlay.style.transition = 'opacity 2s ease';
-  overlay.classList.remove('hidden');
-
-  let i = 0;
-  msg.className = 'centerText';
-  msg.textContent = thresholdLines[0];
-  overlay.style.opacity = 1;
-
-  const INTERVAL = 6000; // 6초마다 한 문장
-  const seq = setInterval(()=>{
-    overlay.style.opacity = 0;         // 페이드 아웃
-    setTimeout(()=>{
-      i++;
-      if(i >= thresholdLines.length){
-        clearInterval(seq);
-        overlay.style.opacity = 0;
-        // 시퀀스 종료 후 오버레이를 숨기고(배경은 투명 유지)
-        setTimeout(()=> overlay.classList.add('hidden'), 600);
-        return;
-      }
-      msg.textContent = thresholdLines[i];
-      overlay.style.opacity = 1;       // 페이드 인
-    }, 2000); // 2초 페이드 아웃 시간
-  }, INTERVAL);
-}
-
 /* ===== Flow ===== */
 onPress(window, async ()=>{
   // 1) 오디오 컨텍스트/웨이크락 먼저
@@ -661,11 +607,7 @@ function stepWalkStop(){
 
     setTimeout(()=>{
       showOverlayText('자유롭게 거닐어라', true);
-      setTimeout(()=>{
-        // ★ 기존 hideOverlay() 대신 타이머 시작 + 문구 시퀀스 시작
-        startExploreTimer(180);
-        playThresholdTextSequence();
-      }, 3000);
+      setTimeout(()=>{ hideOverlay(); startExploreTimer(180); }, 3000);
     }, 3000);
   }, 3000);
 }
