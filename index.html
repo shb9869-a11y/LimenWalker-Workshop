@@ -41,7 +41,7 @@
     transform:translate(-50%,-50%) scale(1); transform-origin:50% 50%;
     border:0; background:transparent; image-rendering:auto;
     z-index:4; pointer-events:none; opacity:0; transition:opacity .25s ease;
-    mix-blend-mode: screen; /* 악몽 코드 감각으로 더 잘 보이게 */
+    mix-blend-mode: screen; /* 더 잘 보이게 */
     will-change:opacity, transform;
   }
 
@@ -76,6 +76,22 @@
     font-size:clamp(12px,1.7vmin,16px); cursor:pointer;
   }
   #countdown{ font-size:clamp(11px,1.6vmin,15px); opacity:.8; margin-top:12px; display:none; }
+
+  /* 우측 하단 180초 타이머 */
+  #cornerTimer{
+    position:fixed;
+    right:calc(12px + env(safe-area-inset-right));
+    bottom:calc(10px + env(safe-area-inset-bottom));
+    z-index:20;
+    font-size:clamp(12px,1.8vmin,16px);
+    opacity:.95;
+    background:rgba(0,0,0,.35);
+    padding:6px 10px;
+    border:1px solid rgba(255,255,255,.6);
+    border-radius:6px;
+    pointer-events:none;
+    display:none;
+  }
 </style>
 </head>
 <body>
@@ -100,21 +116,21 @@
   <div id="countdown"></div>
 </div>
 
+<!-- 180초 타이머 -->
+<div id="cornerTimer">03:00</div>
+
 <script>
 (()=> {
-/* ===== Config (악몽 코드 감각 반영) ===== */
+/* ===== Config (악몽 감각) ===== */
 const CONFIG = {
   ROOM_ID: "YOURROOMID",
-  REZ_SCALE: 0.65,       // 악몽 코드와 같은 렌더 스케일
+  REZ_SCALE: 0.65,
   LINE_WIDTH: 0.6,
   LINE_DASH: [1.5,10],
-
-  /* 상태별 레이어 비율(악몽 BLEND≈0.5 기준) */
   LAYERS: {
     WELCOME: { CAMERA: 1.00, NINJA: 0.50, TRAIL: 0.00 },
     GUIDE:   { CAMERA: 1.00, NINJA: 0.50, TRAIL: 0.00 },
-    WALK:    { CAMERA: 0.95, NINJA: 0.45, TRAIL: 0.95 },
-    STOP:    { CAMERA: 0.95, NINJA: 0.40, TRAIL: 0.85 },
+    EXP:     { CAMERA: 0.95, NINJA: 0.45, TRAIL: 0.95 }, // 탐사 상태(3분 타이머)
   }
 };
 
@@ -128,6 +144,7 @@ const msg       = document.getElementById('msg');
 const startBtn  = document.getElementById('startBtn');
 const infoText  = document.getElementById('infoText');
 const countdown = document.getElementById('countdown');
+const cornerTimer = document.getElementById('cornerTimer');
 
 /* ===== Viewport fix ===== */
 function setViewportVars(){
@@ -195,7 +212,7 @@ function showOverlayText(text, center=true){
 }
 function hideOverlay(){ overlay.classList.add('hidden'); }
 
-/* ===== VDO.Ninja (악몽 코드처럼 선로딩 + 스케일) ===== */
+/* ===== VDO.Ninja ===== */
 const injectedCss = encodeURIComponent(`
   html,body{background:transparent!important;margin:0!important;overflow:hidden!important;}
   #container,.container{background:transparent!important;}
@@ -213,11 +230,10 @@ function applyRezScale(){
 }
 applyRezScale();
 
-/* ★ 선로딩: 로딩 즉시 src 세팅 (가끔 안 보이는 이슈 방지) */
+/* 선로딩 */
 (function preloadOverlay(){
   if(!ninja.src || ninja.src === 'about:blank'){ ninja.src = ninjaUrl(); }
 })();
-/* 가끔 소스가 멈출 때 주기적 새로고침(보일 때만) */
 setInterval(()=>{ if(parseFloat(getComputedStyle(ninja).opacity)||0){ ninja.src = ninjaUrl(); } }, 60000);
 
 /* ===== Layer ratio control ===== */
@@ -356,19 +372,39 @@ function onPress(el, handler){
   el.addEventListener('click', wrap, { once:true });
 }
 
+/* ===== 180초 타이머 ===== */
+let exploreTimerId=null, exploreRemain=0;
+function fmt(t){ const m=String(Math.floor(t/60)).padStart(2,'0'); const s=String(t%60).padStart(2,'0'); return `${m}:${s}`; }
+function startExploreTimer(seconds=180){
+  exploreRemain=seconds;
+  cornerTimer.textContent=fmt(exploreRemain);
+  cornerTimer.style.display='block';
+  if(exploreTimerId) clearInterval(exploreTimerId);
+  exploreTimerId=setInterval(()=>{
+    exploreRemain--;
+    if(exploreRemain<=0){
+      cornerTimer.textContent='00:00';
+      clearInterval(exploreTimerId); exploreTimerId=null;
+      try{ beep(1046,160); }catch{}
+      return;
+    }
+    cornerTimer.textContent=fmt(exploreRemain);
+  },1000);
+}
+
 /* ===== Flow ===== */
-/* 첫 터치: 카메라 + 마이크 권한 동시 요청, 센서/위치 시작, 레이어 적용 */
+/* 첫 터치: 카메라 + 마이크 권한, 센서/위치 시작 */
 onPress(window, async ()=>{
   initAudioContext(); keepScreenOn();
   infoText.style.display='none';
 
   await startCamera().catch(e=>console.error('camera start fail',e));
-  await startMic().catch(e=>console.warn('mic denied', e)); // 사운드 허용 팝업
+  await startMic().catch(e=>console.warn('mic denied', e));
 
   enableMotionIfNeeded(); startGPS(); if(!rafId) loop();
 
   applyRezScale();
-  if(!ninja.contentWindow) ninja.src = ninjaUrl();  // 보수적 재세팅
+  if(!ninja.contentWindow) ninja.src = ninjaUrl();
 
   state='WELCOME'; applyLayerMix();
   stepWelcome();
@@ -385,6 +421,7 @@ function stepWelcome(){
   },3000);
 }
 
+/* 안내 → 60초 카운트다운 후 바로 탐사 시작(180초 타이머, WALK/STOP 제거) */
 let guideTimer=null;
 onPress(startBtn, async ()=>{
   if(guideTimer) return;
@@ -394,7 +431,7 @@ onPress(startBtn, async ()=>{
 
   state='GUIDE'; applyLayerMix();
 
-  let sec=60;
+  let sec=60; // 기존 안내 대기
   countdown.style.display='block';
   countdown.textContent=`${sec}초 후 탐사가 시작됩니다.`;
   guideTimer=setInterval(()=>{
@@ -403,22 +440,16 @@ onPress(startBtn, async ()=>{
     if(sec<=0){
       clearInterval(guideTimer); guideTimer=null;
       countdown.style.display='none';
-      stepWalkStop();
+      beginExploration(); // ★ WALK/STOP 없이 바로 탐사 시작
     }
   },1000);
 });
 
-function stepWalkStop(){
+function beginExploration(){
   drawingEnabled = true;
-
-  state='WALK'; applyLayerMix();
-  showOverlayText('WALK : 공간을 걸어보세요.', true);
-
-  setTimeout(()=>{
-    state='STOP'; applyLayerMix();
-    showOverlayText('STOP : 공간에 멈춰 주변을 살피세요.', true);
-    setTimeout(()=>{ hideOverlay(); }, 3000);
-  },3000);
+  hideOverlay();                 // 오버레이 닫기
+  state='EXP'; applyLayerMix();  // 탐사 레이어 적용
+  startExploreTimer(180);        // ★ 180초 타이머 시작 (우측 하단)
 }
 
 /* 안내문(원문 유지, 폰트만 작게) */
@@ -441,7 +472,10 @@ document.addEventListener('visibilitychange', ()=>{
     if(!currentStream){ restartCameraSoon(50); }
     applyLayerMix();
     if(audioCtx && audioCtx.state==='suspended'){ audioCtx.resume().catch(()=>{}); }
-    if(!ninja.contentWindow || ninja.src==='about:blank'){ ninja.src = ninjaUrl(); } // 보수적 재연결
+    if(!ninja.contentWindow || ninja.src==='about:blank'){ ninja.src = ninjaUrl(); }
+    if(cornerTimer.style.display==='block'){ // 타이머 문구 재확인
+      cornerTimer.textContent = fmt(Math.max(0, exploreRemain|0));
+    }
   }
 });
 window.addEventListener('orientationchange', ()=>{
@@ -452,6 +486,9 @@ window.addEventListener('orientationchange', ()=>{
     applyLayerMix();
   },120);
 });
+
+/* 루프 시작 */
+let rafId=null; function loop(){ drawTrajectory(); rafId = requestAnimationFrame(loop); }
 
 })();
 </script>
