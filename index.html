@@ -77,7 +77,7 @@
   }
   #countdown{ font-size:clamp(11px,1.6vmin,15px); opacity:.8; margin-top:12px; display:none; }
 
-  /* ▼ 추가: 우측 하단 180초 타이머 */
+  /* ▼ 180초 타이머 */
   #cornerTimer{
     position:fixed;
     right:calc(12px + env(safe-area-inset-right));
@@ -92,6 +92,20 @@
     pointer-events:none;
     display:none;
   }
+
+  /* ▼ THE END (검정 박스 없이, 화면 가득 크게) */
+  #theEnd{
+    position:fixed; inset:0; z-index:30;
+    display:none; align-items:center; justify-content:center;
+    color:#fff; background:transparent; text-align:center;
+    font-weight:700; letter-spacing:.12em;
+    font-size:min(18vmin, 12rem);
+    text-shadow:0 0 18px rgba(255,255,255,.22);
+    pointer-events:none;
+    transition:opacity .6s ease;
+    opacity:0;
+  }
+  #theEnd.show{ display:flex; opacity:1; }
 </style>
 </head>
 <body>
@@ -116,19 +130,20 @@
   <div id="countdown"></div>
 </div>
 
-<!-- ▼ 추가: 180초 타이머 노드 -->
+<!-- ▼ 180초 타이머 -->
 <div id="cornerTimer">03:00</div>
+
+<!-- ▼ THE END 스크린 -->
+<div id="theEnd">THE END</div>
 
 <script>
 (()=> {
 /* ===== Config (악몽 코드 감각 반영) ===== */
 const CONFIG = {
   ROOM_ID: "YOURROOMID",
-  REZ_SCALE: 0.65,       // 악몽 코드와 같은 렌더 스케일
+  REZ_SCALE: 0.65,
   LINE_WIDTH: 0.6,
   LINE_DASH: [1.5,10],
-
-  /* 상태별 레이어 비율(악몽 BLEND≈0.5 기준) */
   LAYERS: {
     WELCOME: { CAMERA: 1.00, NINJA: 0.50, TRAIL: 0.00 },
     GUIDE:   { CAMERA: 1.00, NINJA: 0.50, TRAIL: 0.00 },
@@ -147,8 +162,8 @@ const msg       = document.getElementById('msg');
 const startBtn  = document.getElementById('startBtn');
 const infoText  = document.getElementById('infoText');
 const countdown = document.getElementById('countdown');
-/* ▼ 추가: 타이머 엘리먼트 */
 const cornerTimer = document.getElementById('cornerTimer');
+const theEndEl = document.getElementById('theEnd');
 
 /* ===== Viewport fix ===== */
 function setViewportVars(){
@@ -192,6 +207,25 @@ function beep(freq=880, dur=120){
     osc.start(t); osc.stop(t+dur/1000+0.02);
   }catch{}
 }
+/* ▼ 추가: 80Hz 10초 재생 */
+function playTone(freq=80, duration=10000){
+  try{
+    initAudioContext();
+    const osc=audioCtx.createOscillator();
+    const g=audioCtx.createGain();
+    osc.type='sine';
+    osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+    g.gain.value=0.0001;
+    osc.connect(g).connect(audioCtx.destination);
+    const t=audioCtx.currentTime;
+    // 부드러운 페이드 인/아웃(클릭 방지)
+    g.gain.exponentialRampToValueAtTime(0.3, t+0.15);
+    g.gain.setTargetAtTime(0.28, t+0.5, 0.5);
+    g.gain.setTargetAtTime(0.0001, t + duration/1000 - 0.2, 0.15);
+    osc.start(t);
+    osc.stop(t + duration/1000 + 0.02);
+  }catch(e){ console.warn('tone play failed', e); }
+}
 
 /* ===== Wake Lock ===== */
 let wakeLock = null;
@@ -216,7 +250,7 @@ function showOverlayText(text, center=true){
 }
 function hideOverlay(){ overlay.classList.add('hidden'); }
 
-/* ===== VDO.Ninja (악몽 코드처럼 선로딩 + 스케일) ===== */
+/* ===== VDO.Ninja (선로딩 + 스케일) ===== */
 const injectedCss = encodeURIComponent(`
   html,body{background:transparent!important;margin:0!important;overflow:hidden!important;}
   #container,.container{background:transparent!important;}
@@ -234,11 +268,10 @@ function applyRezScale(){
 }
 applyRezScale();
 
-/* ★ 선로딩: 로딩 즉시 src 세팅 (가끔 안 보이는 이슈 방지) */
+/* 선로딩 */
 (function preloadOverlay(){
   if(!ninja.src || ninja.src === 'about:blank'){ ninja.src = ninjaUrl(); }
 })();
-/* 가끔 소스가 멈출 때 주기적 새로고침(보일 때만) */
 setInterval(()=>{ if(parseFloat(getComputedStyle(ninja).opacity)||0){ ninja.src = ninjaUrl(); } }, 60000);
 
 /* ===== Layer ratio control ===== */
@@ -377,7 +410,7 @@ function onPress(el, handler){
   el.addEventListener('click', wrap, { once:true });
 }
 
-/* ▼ 추가: 180초 타이머 로직 */
+/* ===== 180초 타이머 + 엔딩 ===== */
 let exploreTimerId=null, exploreRemain=0;
 function fmt(t){ const m=String(Math.floor(t/60)).padStart(2,'0'); const s=String(t%60).padStart(2,'0'); return `${m}:${s}`; }
 function startExploreTimer(seconds=180){
@@ -390,7 +423,12 @@ function startExploreTimer(seconds=180){
     if(exploreRemain<=0){
       cornerTimer.textContent='00:00';
       clearInterval(exploreTimerId); exploreTimerId=null;
-      try{ beep(1046,160); }catch{}
+      // ▼ 80Hz 10초 재생 후 THE END 표시
+      playTone(80, 10000);
+      setTimeout(()=>{
+        cornerTimer.style.display='none';
+        theEndEl.classList.add('show');
+      }, 10000);
       return;
     }
     cornerTimer.textContent=fmt(exploreRemain);
@@ -398,18 +436,17 @@ function startExploreTimer(seconds=180){
 }
 
 /* ===== Flow ===== */
-/* 첫 터치: 카메라 + 마이크 권한 동시 요청, 센서/위치 시작, 레이어 적용 */
 onPress(window, async ()=>{
   initAudioContext(); keepScreenOn();
   infoText.style.display='none';
 
   await startCamera().catch(e=>console.error('camera start fail',e));
-  await startMic().catch(e=>console.warn('mic denied', e)); // 사운드 허용 팝업
+  await startMic().catch(e=>console.warn('mic denied', e));
 
   enableMotionIfNeeded(); startGPS(); if(!rafId) loop();
 
   applyRezScale();
-  if(!ninja.contentWindow) ninja.src = ninjaUrl();  // 보수적 재세팅
+  if(!ninja.contentWindow) ninja.src = ninjaUrl();
 
   state='WELCOME'; applyLayerMix();
   stepWelcome();
@@ -458,7 +495,6 @@ function stepWalkStop(){
   setTimeout(()=>{
     state='STOP'; applyLayerMix();
     showOverlayText('STOP : 공간에 멈춰 주변을 살피세요.', true);
-    /* ▼ 수정: 오버레이 닫히는 순간 180초 타이머 시작 */
     setTimeout(()=>{ hideOverlay(); startExploreTimer(180); }, 3000);
   },3000);
 }
@@ -483,8 +519,7 @@ document.addEventListener('visibilitychange', ()=>{
     if(!currentStream){ restartCameraSoon(50); }
     applyLayerMix();
     if(audioCtx && audioCtx.state==='suspended'){ audioCtx.resume().catch(()=>{}); }
-    if(!ninja.contentWindow || ninja.src==='about:blank'){ ninja.src = ninjaUrl(); } // 보수적 재연결
-    // ▼ 추가: 타이머 표시 유지 갱신
+    if(!ninja.contentWindow || ninja.src==='about:blank'){ ninja.src = ninjaUrl(); }
     if(cornerTimer.style.display==='block'){
       cornerTimer.textContent = fmt(Math.max(0, exploreRemain|0));
     }
