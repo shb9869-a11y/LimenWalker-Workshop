@@ -76,6 +76,22 @@
     font-size:clamp(12px,1.7vmin,16px); cursor:pointer;
   }
   #countdown{ font-size:clamp(11px,1.6vmin,15px); opacity:.8; margin-top:12px; display:none; }
+
+  /* ▼ 추가: 우측 하단 180초 타이머 */
+  #cornerTimer{
+    position:fixed;
+    right:calc(12px + env(safe-area-inset-right));
+    bottom:calc(10px + env(safe-area-inset-bottom));
+    z-index:20;
+    font-size:clamp(12px,1.8vmin,16px);
+    opacity:.95;
+    background:rgba(0,0,0,.35);
+    padding:6px 10px;
+    border:1px solid rgba(255,255,255,.6);
+    border-radius:6px;
+    pointer-events:none;
+    display:none;
+  }
 </style>
 </head>
 <body>
@@ -99,6 +115,9 @@
   <button id="startBtn" class="stageBtn" style="display:none;">PRESS HERE TO START</button>
   <div id="countdown"></div>
 </div>
+
+<!-- ▼ 추가: 180초 타이머 노드 -->
+<div id="cornerTimer">03:00</div>
 
 <script>
 (()=> {
@@ -128,6 +147,8 @@ const msg       = document.getElementById('msg');
 const startBtn  = document.getElementById('startBtn');
 const infoText  = document.getElementById('infoText');
 const countdown = document.getElementById('countdown');
+/* ▼ 추가: 타이머 엘리먼트 */
+const cornerTimer = document.getElementById('cornerTimer');
 
 /* ===== Viewport fix ===== */
 function setViewportVars(){
@@ -356,6 +377,26 @@ function onPress(el, handler){
   el.addEventListener('click', wrap, { once:true });
 }
 
+/* ▼ 추가: 180초 타이머 로직 */
+let exploreTimerId=null, exploreRemain=0;
+function fmt(t){ const m=String(Math.floor(t/60)).padStart(2,'0'); const s=String(t%60).padStart(2,'0'); return `${m}:${s}`; }
+function startExploreTimer(seconds=180){
+  exploreRemain=seconds;
+  cornerTimer.textContent=fmt(exploreRemain);
+  cornerTimer.style.display='block';
+  if(exploreTimerId) clearInterval(exploreTimerId);
+  exploreTimerId=setInterval(()=>{
+    exploreRemain--;
+    if(exploreRemain<=0){
+      cornerTimer.textContent='00:00';
+      clearInterval(exploreTimerId); exploreTimerId=null;
+      try{ beep(1046,160); }catch{}
+      return;
+    }
+    cornerTimer.textContent=fmt(exploreRemain);
+  },1000);
+}
+
 /* ===== Flow ===== */
 /* 첫 터치: 카메라 + 마이크 권한 동시 요청, 센서/위치 시작, 레이어 적용 */
 onPress(window, async ()=>{
@@ -417,7 +458,8 @@ function stepWalkStop(){
   setTimeout(()=>{
     state='STOP'; applyLayerMix();
     showOverlayText('STOP : 공간에 멈춰 주변을 살피세요.', true);
-    setTimeout(()=>{ hideOverlay(); }, 3000);
+    /* ▼ 수정: 오버레이 닫히는 순간 180초 타이머 시작 */
+    setTimeout(()=>{ hideOverlay(); startExploreTimer(180); }, 3000);
   },3000);
 }
 
@@ -442,6 +484,10 @@ document.addEventListener('visibilitychange', ()=>{
     applyLayerMix();
     if(audioCtx && audioCtx.state==='suspended'){ audioCtx.resume().catch(()=>{}); }
     if(!ninja.contentWindow || ninja.src==='about:blank'){ ninja.src = ninjaUrl(); } // 보수적 재연결
+    // ▼ 추가: 타이머 표시 유지 갱신
+    if(cornerTimer.style.display==='block'){
+      cornerTimer.textContent = fmt(Math.max(0, exploreRemain|0));
+    }
   }
 });
 window.addEventListener('orientationchange', ()=>{
