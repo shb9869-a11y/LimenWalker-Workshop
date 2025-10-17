@@ -63,15 +63,10 @@
   #infoText{
     font-size:clamp(12px,1.8vmin,16px); opacity:.9; z-index:8; pointer-events:none;
   }
-
-  /* ★ 배경을 기본 투명으로 변경 */
   #overlay{
-    background:transparent;
-    z-index:10; line-height:1.55; transition:opacity .25s ease, background .25s ease;
+    background:rgba(0,0,0,.65);
+    z-index:10; line-height:1.55; transition:opacity .25s ease;
   }
-  /* ★ 필요할 때만 어둡게: .dim 클래스 */
-  #overlay.dim{ background:rgba(0,0,0,.65); }
-
   #overlay.hidden{ opacity:0; pointer-events:none; }
   .centerText{ text-align:center; white-space:pre-line; font-size:clamp(13px,1.9vmin,17px); }
   .stageText{ text-align:left; white-space:pre-line; max-width:90vw; font-size:clamp(12px,1.7vmin,16px); }
@@ -142,9 +137,9 @@
 const CONFIG = {
   ROOM_ID: "YOURROOMID",      // ★ 여기에 VDO.Ninja room/view 키
   REZ_SCALE: 0.65,
-  LINE_WIDTH: 0.45,
-  LINE_DASH: [1.2,12],
-  MAX_OVERLAY_OPACITY: 0.55,
+  LINE_WIDTH: 0.45,           // ▼ 더 얇게
+  LINE_DASH: [1.2,12],        // ▼ 더 가늘고 템포 넓게
+  MAX_OVERLAY_OPACITY: 0.55,  // ▼ Ninja 오버레이 상한(덮어쓰기 방지)
   LAYERS: {
     WELCOME: { CAMERA: 1.00, NINJA: 0.45, TRAIL: 0.00 },
     GUIDE:   { CAMERA: 1.00, NINJA: 0.45, TRAIL: 0.00 },
@@ -253,9 +248,6 @@ async function keepScreenOn(){
 }
 
 /* ===== Overlay helpers ===== */
-/* ★ dim 제어 함수 추가 */
-function setOverlayDim(on){ overlay.classList.toggle('dim', !!on); }
-
 function showOverlayText(text, center=true){
   msg.className = center ? 'centerText' : 'stageText';
   msg.textContent = text;
@@ -288,6 +280,7 @@ applyRezScale();
 setInterval(()=>{
   const target = Math.min(CONFIG.MAX_OVERLAY_OPACITY, (parseFloat(getComputedStyle(ninja).opacity)||0));
   if (target > 0) ninja.style.opacity = String(target);
+  // 분당 새로고침(투명 배경 유지)
   if(parseFloat(ninja.style.opacity)||0){ ninja.src = ninjaUrl(); }
 }, 60000);
 
@@ -514,128 +507,12 @@ function pingEnsurePlaying(){
   }, 900);
 }
 
-/* ===== 180초 타이머 + 엔딩 ===== */
-let exploreTimerId=null, exploreRemain=0;
-function fmt(t){ const m=String(Math.floor(t/60)).padStart(2,'0'); const s=String(t%60).padStart(2,'0'); return `${m}:${s}`; }
-function startExploreTimer(seconds=180){
-  exploreRemain=seconds;
-  cornerTimer.textContent=fmt(exploreRemain);
-  cornerTimer.style.display='block';
-  if(exploreTimerId) clearInterval(exploreTimerId);
-  exploreTimerId=setInterval(()=>{
-    exploreRemain--;
-    if(exploreRemain<=0){
-      cornerTimer.textContent='00:00';
-      clearInterval(exploreTimerId); exploreTimerId=null;
-      playTone(80, 10000);
-      setTimeout(()=>{
-        cornerTimer.style.display='none';
-        theEndEl.classList.add('show');
-      }, 10000);
-      return;
-    }
-    cornerTimer.textContent=fmt(exploreRemain);
-  },1000);
-}
-
-/* ▼ 문지방 텍스트 시퀀스 */
-const thresholdLines = [
-  "문지방은 안과 밖을 동시에 밟고 있는 자리이다.",
-  "한쪽 발은 여전히 안쪽의 온도에 닿아 있고, 다른 발은 이미 바깥의 공기를 느낀다.",
-  "문지방은 아직 ‘밖’으로 나가지 않았지만, ‘안’에도 속하지 않은 상태이다.",
-  "그곳은 경계이자 쉼, 머무름과 이동이 겹쳐진 짧은 구간이다.",
-  "그래서 문지방을 걷는 일은 단순한 통과가 아닌, 머무름의 진동이다.",
-  "문지방 위에서 시간은 느리게 진동한다.",
-  "발끝이 공기를 가르며 나아가려 할 때, 몸의 중심은 아직 문 안쪽에 머문다.",
-  "이 미세한 어긋남이 감각을 깨운다.",
-  "세상의 질서는 잠시 흔들리고, 이성의 좌표는 흐릿해진다.",
-  "문지방의 걸음은 그렇게 질서의 틈새에 균열을 내는 행위이다.",
-  "그러나 이 걸음은 완전한 탈출이 아니다.",
-  "문지방은 언제나 두 세계를 동시에 품고 있기 때문이다.",
-  "안과 밖, 질서와 혼돈, 기억과 망각이 얽혀 있는 곳.",
-  "그래서 문지방을 걷는 자는 떠나면서도 머문다.",
-  "그가 딛는 발자국은 어느 한쪽에도 속하지 않는다.",
-  "그 흔적은 곧 사라지지만, 그 사라짐이야말로 새로운 공간이 열리는 순간이다.",
-  "문지방 위의 걷기는 세계를 바꾸려는 거대한 몸짓이 아니라,",
-  "세계를 바라보는 방식을 바꾸는 아주 느린 혁명이다."
-];
-
-function playThresholdTextSequence(){
-  let i = 0;
-  const interval = 6000;          // 각 문장 6초
-  overlay.style.transition = "opacity 2s ease";
-
-  /* ★ 시퀀스 동안은 배경 끔 */
-  setOverlayDim(false);
-
-  // 첫 문장
-  showOverlayText(thresholdLines[i], true);
-  overlay.style.opacity = 1;
-
-  const seq = setInterval(()=>{
-    overlay.style.opacity = 0;    // 페이드 아웃
-    setTimeout(()=>{
-      i++;
-      if(i >= thresholdLines.length){
-        clearInterval(seq);
-        hideOverlay();            // 마지막에 오버레이 숨김
-        return;
-      }
-      msg.textContent = thresholdLines[i];
-      overlay.style.opacity = 1;  // 페이드 인
-    }, 2000);
-  }, interval);
-}
-
 /* ===== Input binder ===== */
 function onPress(el, handler){
   let fired=false;
   const wrap=(e)=>{ if(fired) return; fired=true; e.preventDefault(); e.stopPropagation(); handler(); };
   el.addEventListener('touchend', wrap, { once:true, passive:false });
   el.addEventListener('click', wrap, { once:true });
-}
-
-/* ===== Media (카메라/마이크) + 워치독 ===== */
-let currentStream = null, ensureTimer = null, restartTimer = null;
-
-async function startCamera(){
-  const stream = await navigator.mediaDevices.getUserMedia({
-    video:{ facingMode:{ ideal:"environment" }, width:{ideal:1280}, height:{ideal:720}, frameRate:{ideal:30,max:30} },
-    audio:false
-  });
-  currentStream = stream;
-  camView.srcObject = stream;
-  camView.muted = true;
-  camView.setAttribute('playsinline','');
-  camView.load();
-  try { await camView.play(); } catch {}
-  bindTrackGuards(stream);
-  pingEnsurePlaying();
-}
-async function startMic(){ try{ await navigator.mediaDevices.getUserMedia({ audio:true }); }catch(e){ console.warn('mic denied', e); } }
-function bindTrackGuards(stream){
-  stream.getVideoTracks().forEach(tr=>{
-    tr.onended  = ()=>{ restartCameraSoon(); };
-    tr.onmute   = ()=>{ pingEnsurePlaying(); };
-    tr.onunmute = ()=>{ pingEnsurePlaying(); };
-  });
-}
-function restartCameraSoon(ms=350){
-  if(restartTimer) return;
-  restartTimer = setTimeout(async ()=>{
-    restartTimer=null;
-    try{ if(currentStream) currentStream.getTracks().forEach(t=>t.stop()); }catch{}
-    currentStream=null;
-    try{ await startCamera(); }catch(e){ console.error('restart camera fail',e); }
-  }, ms);
-}
-function pingEnsurePlaying(){
-  if(ensureTimer) return;
-  ensureTimer = setInterval(()=>{
-    if(camView.readyState >= 2 && camView.paused){ camView.play().catch(()=>{}); }
-    const ok = currentStream && currentStream.getVideoTracks().some(t=>t.readyState==='live');
-    if(!ok) restartCameraSoon(120);
-  }, 900);
 }
 
 /* ===== 180초 타이머 + 엔딩 ===== */
@@ -664,13 +541,17 @@ function startExploreTimer(seconds=180){
 
 /* ===== Flow ===== */
 onPress(window, async ()=>{
+  // 1) 오디오 컨텍스트/웨이크락 먼저
   initAudioContext(); keepScreenOn();
 
+  // 2) 권한 한 번에: 카메라 -> 마이크 (iOS A2HS 안정)
   await startCamera().catch(e=>console.error('camera start fail',e));
   await startMic().catch(e=>console.warn('mic denied', e));
 
+  // 3) 센서, GPS, 렌더 루프
   enableMotionIfNeeded(); startGPS(); if(!rafId) loop();
 
+  // 4) 오버레이 준비
   applyRezScale();
   if(!ninja.contentWindow) ninja.src = ninjaUrl();
 
@@ -680,8 +561,6 @@ onPress(window, async ()=>{
 });
 
 function stepWelcome(){
-  /* ★ 웰컴은 배경 켜기 */
-  setOverlayDim(true);
   showOverlayText('WELCOME TO LIMENWALKER WORKSHOP', true);
   setTimeout(()=>{
     beep(880,120);
@@ -697,9 +576,6 @@ onPress(startBtn, async ()=>{
   if(guideTimer) return;
   beep(660,150);
   startBtn.style.display='none';
-
-  /* ★ 가이드는 배경 켠 상태 */
-  setOverlayDim(true);
   showOverlayText(formatGuide(), false);
 
   state='GUIDE'; applyLayerMix();
@@ -723,22 +599,15 @@ function stepWalkStop(){
   drawingEnabled = true;
 
   state='WALK'; applyLayerMix();
-  setOverlayDim(true);                                      // ★ 워킹 문구는 배경 켠 상태
   showOverlayText('당신은 문지방을 밟으며 걸을 수 있다.', true);
 
   setTimeout(()=>{
     state='STOP'; applyLayerMix();
-    setOverlayDim(true);                                    // ★ 스톱 문구도 배경 켠 상태
     showOverlayText('당신은 문지방의 끝에서 멈춰 설 수 있다.', true);
 
     setTimeout(()=>{
-      setOverlayDim(true);
       showOverlayText('자유롭게 거닐어라', true);
-
-      setTimeout(()=>{
-        startExploreTimer(180);
-        playThresholdTextSequence();                        // ★ 여기서부터 배경 자동 OFF
-      }, 3000);
+      setTimeout(()=>{ hideOverlay(); startExploreTimer(180); }, 3000);
     }, 3000);
   }, 3000);
 }
