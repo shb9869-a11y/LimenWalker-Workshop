@@ -207,7 +207,7 @@ function beep(freq=880, dur=120){
     osc.start(t); osc.stop(t+dur/1000+0.02);
   }catch{}
 }
-/* ▼ 추가: 80Hz 10초 재생 */
+/* 80Hz 10초 재생 */
 function playTone(freq=80, duration=10000){
   try{
     initAudioContext();
@@ -218,7 +218,6 @@ function playTone(freq=80, duration=10000){
     g.gain.value=0.0001;
     osc.connect(g).connect(audioCtx.destination);
     const t=audioCtx.currentTime;
-    // 부드러운 페이드 인/아웃(클릭 방지)
     g.gain.exponentialRampToValueAtTime(0.3, t+0.15);
     g.gain.setTargetAtTime(0.28, t+0.5, 0.5);
     g.gain.setTargetAtTime(0.0001, t + duration/1000 - 0.2, 0.15);
@@ -423,7 +422,7 @@ function startExploreTimer(seconds=180){
     if(exploreRemain<=0){
       cornerTimer.textContent='00:00';
       clearInterval(exploreTimerId); exploreTimerId=null;
-      // ▼ 80Hz 10초 재생 후 THE END 표시
+      // 80Hz 10초 재생 후 THE END 표시
       playTone(80, 10000);
       setTimeout(()=>{
         cornerTimer.style.display='none';
@@ -486,17 +485,25 @@ onPress(startBtn, async ()=>{
   },1000);
 });
 
+/* ▼ 변경: WALK/STOP 문구 교체 + 3단계 안내 */
 function stepWalkStop(){
   drawingEnabled = true;
 
   state='WALK'; applyLayerMix();
-  showOverlayText('WALK : 공간을 걸어보세요.', true);
+  showOverlayText('당신은 문지방을 밟으며 걷을 수 있다.', true);
 
   setTimeout(()=>{
     state='STOP'; applyLayerMix();
-    showOverlayText('STOP : 공간에 멈춰 주변을 살피세요.', true);
-    setTimeout(()=>{ hideOverlay(); startExploreTimer(180); }, 3000);
-  },3000);
+    showOverlayText('당신은 문지방의 끝에서 멈춰 설 수 있다.', true);
+
+    setTimeout(()=>{
+      // 세 번째 문구
+      showOverlayText('자유롭게 거닐어라', true);
+
+      // 3초 뒤 오버레이 닫고 타이머 시작
+      setTimeout(()=>{ hideOverlay(); startExploreTimer(180); }, 3000);
+    }, 3000);
+  }, 3000);
 }
 
 /* 안내문(원문 유지, 폰트만 작게) */
